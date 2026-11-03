@@ -63,7 +63,7 @@ final class RevisedSchemaTest extends TestCase
             [
                 'supplier_invoices',
                 'payment_transactions',
-                'financial_documents'
+                'financial_documents',
             ] as $table
         ) {
             $this->assertFalse(
@@ -167,7 +167,7 @@ final class RevisedSchemaTest extends TestCase
 
         $this->assertTrue(
             $matches,
-            "Missing unique index for {$table}: " . implode(', ', $columns)
+            "Missing unique index for {$table}: ".implode(', ', $columns)
         );
     }
 }

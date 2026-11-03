@@ -13,6 +13,17 @@ final class RolePermissionSeeder extends Seeder
 {
     public function run(): void
     {
+
+        if (
+            Role::query()
+            ->where('guard_name', 'web')
+            ->exists()
+        ) {
+            $this->command?->warn('RBAC sudah diinisialisasi. Seeder dilewati agar perubahan role dan permission tidak tertimpa.');
+
+            return;
+        }
+
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         $permissions = [
