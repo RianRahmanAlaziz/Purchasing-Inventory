@@ -70,7 +70,7 @@ final class DepartmentApiTest extends TestCase
         $this->actAsRoleWithPermissions(['departments.view']);
         $department = $this->department('HRD', 'Human Resources');
 
-        $this->getJson('/api/v1/departments/' . $department->id)
+        $this->getJson('/api/v1/departments/'.$department->id)
             ->assertOk()
             ->assertJsonPath('data.code', 'HRD');
 
@@ -113,7 +113,7 @@ final class DepartmentApiTest extends TestCase
         $this->actAsRoleWithPermissions(['departments.view', 'departments.manage']);
         $department = $this->department('OPS', 'Operations');
 
-        $this->patchJson('/api/v1/departments/' . $department->id, [
+        $this->patchJson('/api/v1/departments/'.$department->id, [
             'name' => 'Operational Support',
             'is_active' => false,
         ])->assertOk()
@@ -147,7 +147,7 @@ final class DepartmentApiTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->deleteJson('/api/v1/departments/' . $department->id)
+        $this->deleteJson('/api/v1/departments/'.$department->id)
             ->assertStatus(409);
 
         $this->assertDatabaseHas('departments', ['id' => $department->id]);
@@ -158,7 +158,7 @@ final class DepartmentApiTest extends TestCase
         $this->actAsRoleWithPermissions(['departments.view', 'departments.manage']);
         $department = $this->department('TEMP', 'Temporary Department');
 
-        $this->deleteJson('/api/v1/departments/' . $department->id)
+        $this->deleteJson('/api/v1/departments/'.$department->id)
             ->assertOk();
 
         $this->assertDatabaseMissing('departments', ['id' => $department->id]);
