@@ -10,16 +10,25 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 final class Order extends Model
 {
     protected $fillable = [
-        'purchase_order_id', 'status', 'confirmed_at', 'completed_at', 'cancelled_at',
+        'purchase_order_id',
+        'status',
+        'confirmed_at',
+        'completed_at',
+        'cancelled_at',
     ];
 
     protected function casts(): array
     {
-        return ['confirmed_at' => 'datetime', 'completed_at' => 'datetime', 'cancelled_at' => 'datetime'];
+        return [
+            'confirmed_at' => 'datetime',
+            'completed_at' => 'datetime',
+            'cancelled_at' => 'datetime',
+        ];
     }
 
+    /** PO soft-deleted tetap bisa dibaca untuk audit Order historis. */
     public function purchaseOrder(): BelongsTo
     {
-        return $this->belongsTo(PurchaseOrder::class);
+        return $this->belongsTo(PurchaseOrder::class)->withTrashed();
     }
 }

@@ -113,17 +113,36 @@ final class SupplierApiTest extends TestCase
         $this->getJson('/api/v1/suppliers')->assertUnauthorized();
     }
 
+
     public function test_viewer_cannot_create_or_delete_suppliers(): void
     {
+        // Login sebagai user yang hanya memiliki izin melihat.
         $this->actAsPermissions(['suppliers.view']);
-        $this->supplier('SUP-A', 'PT Mandiri');
 
-        $this->getJson('/api/v1/suppliers')->assertOk();
+        // Buat supplier nyata dan gunakan ID hasil database.
+        $supplier = $this->supplier('SUP-A', 'PT Mandiri');
+
+        // Viewer boleh membaca data supplier.
+        $this->getJson('/api/v1/suppliers')
+            ->assertOk();
+
+        // Viewer tidak boleh menambah supplier.
         $this->postJson('/api/v1/suppliers', [
             'name' => 'PT Baru',
         ])->assertForbidden();
-        $this->deleteJson('/api/v1/suppliers/1')->assertForbidden();
+
+        // Viewer tidak boleh menghapus supplier yang benar-benar ada.
+        $this->deleteJson(
+            '/api/v1/suppliers/' . $supplier->getKey()
+        )->assertForbidden();
+
+        // Pastikan supplier tidak terhapus.
+        $this->assertDatabaseHas('suppliers', [
+            'id' => $supplier->getKey(),
+            'code' => 'SUP-A',
+        ]);
     }
+
 
     public function test_manager_creates_supplier_without_typing_code(): void
     {

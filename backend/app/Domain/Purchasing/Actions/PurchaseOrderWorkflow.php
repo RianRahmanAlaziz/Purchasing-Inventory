@@ -23,9 +23,11 @@ final class PurchaseOrderWorkflow
             }
             $this->requireStatus($po, 'draft');
 
-            if (! $po->supplier()->where('is_active', true)->exists()
+            if (
+                ! $po->supplier()->where('is_active', true)->exists()
                 || ! $po->employee()->where('is_active', true)->exists()
-                || ! $po->department()->where('is_active', true)->exists()) {
+                || ! $po->department()->where('is_active', true)->exists()
+            ) {
                 throw new PurchaseOrderConflict('Supplier, karyawan, atau departemen tidak aktif.');
             }
             if ((int) $po->employee->department_id !== (int) $po->requested_for_department_id) {
@@ -34,8 +36,10 @@ final class PurchaseOrderWorkflow
             if (! $po->items()->exists()) {
                 throw new PurchaseOrderConflict('PO minimal memiliki satu item.');
             }
-            if ($po->items()->whereHas('item', fn ($q) => $q->where('is_active', false))->exists()
-                || $po->items()->whereHas('item.category', fn ($q) => $q->where('is_active', false))->exists()) {
+            if (
+                $po->items()->whereHas('item', fn ($q) => $q->where('is_active', false))->exists()
+                || $po->items()->whereHas('item.category', fn ($q) => $q->where('is_active', false))->exists()
+            ) {
                 throw new PurchaseOrderConflict('PO mempunyai barang atau kategori yang tidak aktif.');
             }
 
@@ -50,11 +54,15 @@ final class PurchaseOrderWorkflow
             ]);
 
             $po->approvals()->create([
-                'step_order' => 1, 'role_name' => 'hr', 'status' => 'pending',
+                'step_order' => 1,
+                'role_name' => 'hr',
+                'status' => 'pending',
             ]);
             if ($needsGm) {
                 $po->approvals()->create([
-                    'step_order' => 2, 'role_name' => 'general_manager', 'status' => 'pending',
+                    'step_order' => 2,
+                    'role_name' => 'general_manager',
+                    'status' => 'pending',
                 ]);
             }
             $this->event($po, $actor, 'submitted', 'draft', 'pending_approval');
@@ -81,7 +89,8 @@ final class PurchaseOrderWorkflow
             $this->checkApprovalSequence($po, $approval, $actor);
 
             $approval->update([
-                'status' => 'approved', 'decided_by' => $actor->id,
+                'status' => 'approved',
+                'decided_by' => $actor->id,
                 'decided_at' => now(),
             ]);
             $this->event($po, $actor, 'approved_'.$step, 'pending_approval', 'pending_approval');
@@ -110,8 +119,10 @@ final class PurchaseOrderWorkflow
             }
             $this->checkApprovalSequence($po, $approval, $actor);
             $approval->update([
-                'status' => 'rejected', 'decided_by' => $actor->id,
-                'decided_at' => now(), 'rejection_reason' => $reason,
+                'status' => 'rejected',
+                'decided_by' => $actor->id,
+                'decided_at' => now(),
+                'rejection_reason' => $reason,
             ]);
             $po->update(['status' => 'rejected', 'rejected_at' => now(), 'rejection_reason' => $reason]);
             $this->event($po, $actor, 'rejected_'.$step, 'pending_approval', 'rejected', $reason);
@@ -142,16 +153,42 @@ final class PurchaseOrderWorkflow
     {
         return DB::transaction(function () use ($po, $actor): PurchaseOrder {
             $po = $this->locked($po);
+
             if ($po->status === 'received_by_supplier') {
                 return $this->load($po);
             }
+
             $this->requireStatus($po, 'sent');
+
             $order = $po->order()->lockForUpdate()->first();
-            if ($order === null || $order->status !== 'pending') {
-                throw new PurchaseOrderConflict('Order tidak berada pada status pending.');
+
+            if ($order === null || ! in_array($order->status, [
+                'pending',
+                'confirmed',
+                'partially_received',
+                'completed',
+            ], true)) {
+                throw new PurchaseOrderConflict('Order tidak berada pada status yang dapat dikonfirmasi.');
             }
-            $po->update(['status' => 'received_by_supplier', 'supplier_confirmed_at' => now()]);
-            $order->update(['status' => 'confirmed', 'confirmed_at' => now()]);
+
+            $po->update([
+                'status' => 'received_by_supplier',
+                'supplier_confirmed_at' => now(),
+            ]);
+
+            // Supplier dapat mengonfirmasi PO SETELAH penerimaan fisik via GRN.
+            // Dalam kasus itu status Order tidak boleh kembali menjadi "confirmed".
+            $changes = [];
+            if ($order->status === 'pending') {
+                $changes['status'] = 'confirmed';
+            }
+            if ($order->confirmed_at === null) {
+                $changes['confirmed_at'] = now();
+            }
+            if ($changes !== []) {
+                $order->update($changes);
+            }
+
             $this->event($po, $actor, 'supplier_confirmed', 'sent', 'received_by_supplier');
 
             return $this->load($po);
@@ -239,9 +276,12 @@ final class PurchaseOrderWorkflow
     private function event(PurchaseOrder $po, User $actor, string $action, ?string $from, string $to, ?string $notes = null): void
     {
         $po->events()->create([
-            'actor_id' => $actor->id, 'action' => $action,
-            'from_status' => $from, 'to_status' => $to,
-            'notes' => $notes, 'created_at' => now(),
+            'actor_id' => $actor->id,
+            'action' => $action,
+            'from_status' => $from,
+            'to_status' => $to,
+            'notes' => $notes,
+            'created_at' => now(),
         ]);
     }
 

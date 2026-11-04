@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\EmployeeController;
 use App\Http\Controllers\Api\V1\EmployeeSelfController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\ItemController;
+use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\PermissionController;
 use App\Http\Controllers\Api\V1\PurchaseOrderController;
 use App\Http\Controllers\Api\V1\RbacAuditController;
@@ -126,5 +127,12 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::post('/{purchaseOrder}/send', [PurchaseOrderController::class, 'send'])->whereNumber('purchaseOrder')->middleware('can:po.send')->name('send');
         Route::post('/{purchaseOrder}/supplier-confirm', [PurchaseOrderController::class, 'supplierConfirm'])->whereNumber('purchaseOrder')->middleware('can:po.supplier-confirm')->name('supplier-confirm');
         Route::post('/{purchaseOrder}/cancel', [PurchaseOrderController::class, 'cancel'])->whereNumber('purchaseOrder')->middleware('can:po.update')->name('cancel');
+    });
+
+    Route::prefix('orders')->name('orders.')->middleware('can:orders.view')->group(function (): void {
+        Route::get('/', [OrderController::class, 'index'])->name('index');
+        Route::get('/summary', [OrderController::class, 'summary'])->name('summary');
+        Route::get('/{order}', [OrderController::class, 'show'])->whereNumber('order')->name('show');
+        Route::get('/{order}/receipts', [OrderController::class, 'receipts'])->whereNumber('order')->name('receipts');
     });
 });
