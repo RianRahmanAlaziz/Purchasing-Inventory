@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\DepartmentController;
 use App\Http\Controllers\Api\V1\EmployeeSelfController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\PermissionController;
@@ -37,4 +38,14 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
     });
 
     Route::get('/employees/me', EmployeeSelfController::class)->name('employees.me');
+
+    Route::prefix('departments')
+        ->name('departments.')
+        ->group(function (): void {
+            Route::get('/', [DepartmentController::class, 'index'])->middleware('can:departments.view')->name('index');
+            Route::get('/{department}', [DepartmentController::class,  'show'])->middleware('can:departments.view')->name('show');
+            Route::post('/', [DepartmentController::class, 'store'])->middleware('can:departments.manage')->name('store');
+            Route::patch('/{department}', [DepartmentController::class, 'update'])->middleware('can:departments.manage')->name('update');
+            Route::delete('/{department}', [DepartmentController::class, 'destroy'])->middleware('can:departments.manage')->name('destroy');
+        });
 });
