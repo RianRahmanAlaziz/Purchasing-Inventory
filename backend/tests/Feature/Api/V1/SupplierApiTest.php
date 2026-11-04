@@ -113,7 +113,6 @@ final class SupplierApiTest extends TestCase
         $this->getJson('/api/v1/suppliers')->assertUnauthorized();
     }
 
-
     public function test_viewer_cannot_create_or_delete_suppliers(): void
     {
         // Login sebagai user yang hanya memiliki izin melihat.
@@ -133,7 +132,7 @@ final class SupplierApiTest extends TestCase
 
         // Viewer tidak boleh menghapus supplier yang benar-benar ada.
         $this->deleteJson(
-            '/api/v1/suppliers/' . $supplier->getKey()
+            '/api/v1/suppliers/'.$supplier->getKey()
         )->assertForbidden();
 
         // Pastikan supplier tidak terhapus.
@@ -142,7 +141,6 @@ final class SupplierApiTest extends TestCase
             'code' => 'SUP-A',
         ]);
     }
-
 
     public function test_manager_creates_supplier_without_typing_code(): void
     {

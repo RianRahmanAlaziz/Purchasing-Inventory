@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\DepartmentController;
 use App\Http\Controllers\Api\V1\EmployeeController;
 use App\Http\Controllers\Api\V1\EmployeeSelfController;
+use App\Http\Controllers\Api\V1\GoodsReceiptController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\ItemController;
 use App\Http\Controllers\Api\V1\OrderController;
@@ -134,5 +135,13 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::get('/summary', [OrderController::class, 'summary'])->name('summary');
         Route::get('/{order}', [OrderController::class, 'show'])->whereNumber('order')->name('show');
         Route::get('/{order}/receipts', [OrderController::class, 'receipts'])->whereNumber('order')->name('receipts');
+    });
+
+    Route::prefix('goods-receipts')->name('goods-receipts.')->group(function (): void {
+        Route::get('/', [GoodsReceiptController::class, 'index'])->middleware('can:grn.view')->name('index');
+        Route::post('/', [GoodsReceiptController::class, 'store'])->middleware('can:grn.create')->name('store');
+        Route::get('/{goodsReceipt}', [GoodsReceiptController::class,  'show'])->whereNumber('goodsReceipt')->middleware('can:grn.view')->name('show');
+        Route::patch('/{goodsReceipt}', [GoodsReceiptController::class,  'update'])->whereNumber('goodsReceipt')->middleware('can:grn.create')->name('update');
+        Route::post('/{goodsReceipt}/confirm', [GoodsReceiptController::class,   'confirm'])->whereNumber('goodsReceipt')->middleware('can:grn.confirm')->name('confirm');
     });
 });
