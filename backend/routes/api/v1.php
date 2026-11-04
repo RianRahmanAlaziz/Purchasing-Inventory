@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\DepartmentController;
+use App\Http\Controllers\Api\V1\DistributionController;
 use App\Http\Controllers\Api\V1\EmployeeController;
 use App\Http\Controllers\Api\V1\EmployeeSelfController;
 use App\Http\Controllers\Api\V1\GoodsReceiptController;
@@ -143,5 +144,18 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::get('/{goodsReceipt}', [GoodsReceiptController::class,  'show'])->whereNumber('goodsReceipt')->middleware('can:grn.view')->name('show');
         Route::patch('/{goodsReceipt}', [GoodsReceiptController::class,  'update'])->whereNumber('goodsReceipt')->middleware('can:grn.create')->name('update');
         Route::post('/{goodsReceipt}/confirm', [GoodsReceiptController::class,   'confirm'])->whereNumber('goodsReceipt')->middleware('can:grn.confirm')->name('confirm');
+    });
+
+    Route::prefix('distributions')->name('distributions.')->group(function (): void {
+        Route::get('/', [DistributionController::class, 'index'])->name('index');
+        Route::post('/', [DistributionController::class, 'store'])->name('store');
+
+        Route::get('/{distribution}', [DistributionController::class, 'show'])->whereNumber('distribution')->name('show');
+        Route::post('/{distribution}/approve', [DistributionController::class, 'approve'])->whereNumber('distribution')->middleware('can:distribution.approve')->name('approve');
+        Route::post('/{distribution}/reject', [DistributionController::class, 'reject'])->whereNumber('distribution')->middleware('can:distribution.reject')->name('reject');
+        Route::post('/{distribution}/prepare', [DistributionController::class, 'prepare'])->whereNumber('distribution')->middleware('can:distribution.prepare')->name('prepare');
+        Route::post('/{distribution}/send', [DistributionController::class, 'send'])->whereNumber('distribution')->middleware('can:distribution.send')->name('send');
+        // Self-service: tanpa permission operasional, identitas penerima wajib cocok di Action.
+        Route::post('/{distribution}/receive', [DistributionController::class, 'receive'])->whereNumber('distribution')->name('receive');
     });
 });
