@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\PermissionController;
 use App\Http\Controllers\Api\V1\RbacAuditController;
 use App\Http\Controllers\Api\V1\RoleController;
+use App\Http\Controllers\Api\V1\SupplierController;
 use App\Http\Controllers\Api\V1\UserRoleController;
 use App\Http\Middleware\EnsureActiveAccount;
 use Illuminate\Support\Facades\Route;
@@ -49,22 +50,20 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
     });
 
     Route::prefix('employees')->name('employees.')->group(function (): void {
-        Route::get('/', [EmployeeController::class, 'index'])
-            ->middleware('can:employees.view')->name('index');
+        Route::get('/', [EmployeeController::class, 'index'])->middleware('can:employees.view')->name('index');
+        Route::post('/', [EmployeeController::class, 'store'])->middleware('can:employees.manage')->name('store');
+        Route::get('/{employee}', [EmployeeController::class, 'show'])->whereNumber('employee')->middleware('can:employees.view')->name('show');
+        Route::patch('/{employee}', [EmployeeController::class, 'update'])->whereNumber('employee')->middleware('can:employees.manage')->name('update');
+        Route::delete('/{employee}', [EmployeeController::class, 'destroy'])->whereNumber('employee')->middleware('can:employees.manage')->name('destroy');
+    });
 
-        Route::post('/', [EmployeeController::class, 'store'])
-            ->middleware('can:employees.manage')->name('store');
-
-        Route::get('/{employee}', [EmployeeController::class, 'show'])
-            ->whereNumber('employee')
-            ->middleware('can:employees.view')->name('show');
-
-        Route::patch('/{employee}', [EmployeeController::class, 'update'])
-            ->whereNumber('employee')
-            ->middleware('can:employees.manage')->name('update');
-
-        Route::delete('/{employee}', [EmployeeController::class, 'destroy'])
-            ->whereNumber('employee')
-            ->middleware('can:employees.manage')->name('destroy');
+    Route::prefix('suppliers')->name('suppliers.')->group(function (): void {
+        Route::get('/suggest', [SupplierController::class, 'suggest'])->middleware('can:suppliers.view')->name('suggest');
+        Route::get('/', [SupplierController::class,  'index'])->middleware('can:suppliers.view')->name('index');
+        Route::post('/', [SupplierController::class, 'store'])->middleware('can:suppliers.create')->name('store');
+        Route::get('/{supplier}/purchase-orders', [SupplierController::class,  'purchaseOrders'])->whereNumber('supplier')->middleware(['can:suppliers.view', 'can:po.view'])->name('purchase-orders');
+        Route::get('/{supplier}', [SupplierController::class,  'show'])->whereNumber('supplier')->middleware('can:suppliers.view')->name('show');
+        Route::patch('/{supplier}', [SupplierController::class,  'update'])->whereNumber('supplier')->middleware('can:suppliers.update')->name('update');
+        Route::delete('/{supplier}', [SupplierController::class,  'destroy'])->whereNumber('supplier')->middleware('can:suppliers.delete')->name('destroy');
     });
 });
