@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Domain\Authorization\Services\RbacAuditLogger;
+use App\Domain\Authorization\Services\RbacMutationService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Authorization\SaveRoleRequest;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 
 final class RoleController extends Controller
@@ -20,107 +21,72 @@ final class RoleController extends Controller
             ->with('permissions')
             ->orderBy('name')
             ->get()
-            ->map(fn(Role $role) => $this->format($role));
+            ->map(fn (Role $role): array => $this->format($role));
 
-        return ApiResponse::success(
-            $roles,
-            'Daftar role berhasil diambil.'
-        );
+        return ApiResponse::success($roles, 'Daftar role berhasil diambil.');
     }
 
     public function store(
-        SaveRoleRequest $request
+        SaveRoleRequest $request,
+        RbacMutationService $mutation,
+        RbacAuditLogger $audit
     ): JsonResponse {
         $data = $request->validated();
+        $actor = $request->user();
 
-        $role = DB::transaction(function () use ($data): Role {
-            $role = Role::create([
-                'name' => $data['name'],
-                'guard_name' => 'web',
-            ]);
-
+        $result = $mutation->execute($actor, function () use ($request, $actor, $data, $audit): array {
+            $role = Role::create(['name' => $data['name'], 'guard_name' => 'web']);
             $role->syncPermissions($data['permissions']);
+            $after = $this->format($role->fresh('permissions'));
+            $audit->record($actor, $request, 'role.created', 'role', $role->id, null, $after);
 
-            return $role->load('permissions');
+            return $after;
         });
 
-        return ApiResponse::success(
-            $this->format($role),
-            'Role berhasil dibuat.',
-            201
-        );
+        return ApiResponse::success($result, 'Role berhasil dibuat.', 201);
     }
 
     public function update(
         SaveRoleRequest $request,
-        Role $role
+        Role $role,
+        RbacMutationService $mutation,
+        RbacAuditLogger $audit
     ): JsonResponse {
         abort_unless($role->guard_name === 'web', 404);
-
         $data = $request->validated();
+        $actor = $request->user();
 
-        // Cegah pengguna mengunci akses manajemen role
-        // miliknya sendiri secara tidak sengaja.
-        if (array_key_exists('permissions', $data)) {
-            $actor = $request->user();
+        $result = $mutation->execute($actor, function () use ($request, $actor, $role, $data, $audit): array {
+            $lockedRole = Role::query()
+                ->whereKey($role->getKey())
+                ->where('guard_name', 'web')
+                ->firstOrFail();
 
-            $removesManage = $role->hasPermissionTo('roles.manage')
-                && ! in_array(
-                    'roles.manage',
-                    $data['permissions'],
-                    true
-                );
+            $before = $this->format($lockedRole->load('permissions'));
 
-            $hasOtherManage = $actor->getDirectPermissions()
-                ->contains('name', 'roles.manage')
-                || $actor->roles
-                ->filter(
-                    fn(Role $assigned) =>
-                    $assigned->getKey() !== $role->getKey()
-                )
-                ->contains(
-                    fn(Role $assigned) =>
-                    $assigned->hasPermissionTo('roles.manage')
-                );
-
-            if (
-                $removesManage &&
-                $actor->hasRole($role) &&
-                ! $hasOtherManage
-            ) {
-                return ApiResponse::error(
-                    'Tidak boleh menghapus akses roles.manage milik sendiri tanpa akses pengganti.',
-                    409
-                );
-            }
-        }
-
-        DB::transaction(function () use ($role, $data): void {
             if (array_key_exists('name', $data)) {
-                $role->update(['name' => $data['name']]);
+                $lockedRole->update(['name' => $data['name']]);
+            }
+            if (array_key_exists('permissions', $data)) {
+                $lockedRole->syncPermissions($data['permissions']);
             }
 
-            if (array_key_exists('permissions', $data)) {
-                $role->syncPermissions($data['permissions']);
-            }
+            $after = $this->format($lockedRole->fresh('permissions'));
+            $audit->record($actor, $request, 'role.updated', 'role', $lockedRole->id, $before, $after);
+
+            return $after;
         });
 
-        return ApiResponse::success(
-            $this->format($role->fresh('permissions')),
-            'Role berhasil diperbarui.'
-        );
+        return ApiResponse::success($result, 'Role berhasil diperbarui.');
     }
 
+    /** @return array{id: mixed, name: string, permissions: array<int, string>} */
     private function format(Role $role): array
     {
         return [
-            'id' => $role->id,
+            'id' => $role->getKey(),
             'name' => $role->name,
-            'permissions' => $role->permissions
-                ->pluck('name')
-                ->sort()
-                ->values()
-                ->all(),
+            'permissions' => $role->permissions->pluck('name')->sort()->values()->all(),
         ];
     }
 }

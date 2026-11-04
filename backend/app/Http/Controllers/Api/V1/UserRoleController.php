@@ -4,62 +4,40 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Domain\Authorization\Services\RbacAuditLogger;
+use App\Domain\Authorization\Services\RbacMutationService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Authorization\SyncUserRolesRequest;
 use App\Models\User;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
-use Spatie\Permission\Models\Role;
 
 final class UserRoleController extends Controller
 {
     public function update(
         SyncUserRolesRequest $request,
-        User $user
+        User $user,
+        RbacMutationService $mutation,
+        RbacAuditLogger $audit
     ): JsonResponse {
+        $actor = $request->user();
         $roles = $request->validated('roles');
 
-        // Cegah pengelola menghapus aksesnya sendiri.
-        if ($user->is($request->user())) {
-            $retainsManage = $user->getDirectPermissions()
-                ->contains('name', 'roles.manage');
+        $result = $mutation->execute($actor, function () use ($request, $actor, $user, $roles, $audit): array {
+            $target = User::query()->whereKey($user->getKey())->lockForUpdate()->firstOrFail();
+            $before = ['roles' => $target->getRoleNames()->sort()->values()->all()];
 
-            if (! $retainsManage) {
-                $retainsManage = Role::query()
-                    ->where('guard_name', 'web')
-                    ->whereIn('name', $roles)
-                    ->get()
-                    ->contains(
-                        fn(Role $role) =>
-                        $role->hasPermissionTo('roles.manage')
-                    );
-            }
+            $target->syncRoles($roles);
+            $after = ['roles' => $target->fresh()->getRoleNames()->sort()->values()->all()];
 
-            if (! $retainsManage) {
-                return ApiResponse::error(
-                    'Anda tidak dapat mencabut akses pengelolaan role milik sendiri.',
-                    409
-                );
-            }
-        }
+            $audit->record($actor, $request, 'user.roles.synced', 'user', $target->id, $before, $after);
 
-        DB::transaction(function () use ($user, $roles): void {
-            $user->syncRoles($roles);
+            // Old bearer tokens are no longer accepted after assignment changes.
+            $target->tokens()->delete();
 
-            // Wajib login ulang setelah perubahan role.
-            $user->tokens()->delete();
+            return ['user_id' => $target->getKey(), ...$after];
         });
 
-        return ApiResponse::success(
-            [
-                'user_id' => $user->id,
-                'roles' => $user->fresh()
-                    ->getRoleNames()
-                    ->values()
-                    ->all(),
-            ],
-            'Role pengguna berhasil diperbarui.'
-        );
+        return ApiResponse::success($result, 'Role pengguna berhasil diperbarui.');
     }
 }

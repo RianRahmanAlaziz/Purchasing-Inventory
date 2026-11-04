@@ -52,7 +52,6 @@ final class AuthApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.user.id', $user->id);
 
-
         $this->withToken($token)
             ->postJson('/api/v1/auth/logout')
             ->assertOk();
