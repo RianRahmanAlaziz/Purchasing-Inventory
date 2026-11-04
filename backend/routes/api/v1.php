@@ -12,6 +12,8 @@ use App\Http\Controllers\Api\V1\ItemController;
 use App\Http\Controllers\Api\V1\PermissionController;
 use App\Http\Controllers\Api\V1\RbacAuditController;
 use App\Http\Controllers\Api\V1\RoleController;
+use App\Http\Controllers\Api\V1\StockAdjustmentController;
+use App\Http\Controllers\Api\V1\StockMovementController;
 use App\Http\Controllers\Api\V1\SupplierController;
 use App\Http\Controllers\Api\V1\UserRoleController;
 use App\Http\Middleware\EnsureActiveAccount;
@@ -84,4 +86,9 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::patch('/{item}', [ItemController::class, 'update'])->whereNumber('item')->middleware('can:items.manage')->name('update');
         Route::delete('/{item}', [ItemController::class, 'destroy'])->whereNumber('item')->middleware('can:items.manage')->name('destroy');
     });
+
+    Route::post('/items/{item}/stock-adjustments', [StockAdjustmentController::class, 'store'])->whereNumber('item')->middleware('can:inventory.adjust')->name('inventory.adjustments.store');
+    Route::get('/stock-adjustments', [StockAdjustmentController::class, 'index'])->middleware('can:inventory.view')->name('inventory.adjustments.index');
+    Route::get('/stock-adjustments/{stockAdjustment}', [StockAdjustmentController::class, 'show'])->whereNumber('stockAdjustment')->middleware('can:inventory.view')->name('inventory.adjustments.show');
+    Route::get('/stock-movements', [StockMovementController::class, 'index'])->middleware('can:inventory.view')->name('inventory.movements.index');
 });
