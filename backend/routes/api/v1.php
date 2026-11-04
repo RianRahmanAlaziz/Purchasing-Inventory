@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\DepartmentController;
 use App\Http\Controllers\Api\V1\EmployeeController;
 use App\Http\Controllers\Api\V1\EmployeeSelfController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\ItemController;
 use App\Http\Controllers\Api\V1\PermissionController;
 use App\Http\Controllers\Api\V1\RbacAuditController;
 use App\Http\Controllers\Api\V1\RoleController;
@@ -74,5 +75,13 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::get('/{category}', [CategoryController::class,   'show'])->whereNumber('category')->middleware('can:categories.view')->name('show');
         Route::patch('/{category}', [CategoryController::class, 'update'])->whereNumber('category')->middleware('can:categories.manage')->name('update');
         Route::delete('/{category}', [CategoryController::class, 'destroy'])->whereNumber('category')->middleware('can:categories.manage')->name('destroy');
+    });
+
+    Route::prefix('items')->name('items.')->group(function (): void {
+        Route::get('/', [ItemController::class, 'index'])->middleware('can:items.view')->name('index');
+        Route::post('/', [ItemController::class,  'store'])->middleware('can:items.manage')->name('store');
+        Route::get('/{item}', [ItemController::class, 'show'])->whereNumber('item')->middleware('can:items.view')->name('show');
+        Route::patch('/{item}', [ItemController::class, 'update'])->whereNumber('item')->middleware('can:items.manage')->name('update');
+        Route::delete('/{item}', [ItemController::class, 'destroy'])->whereNumber('item')->middleware('can:items.manage')->name('destroy');
     });
 });
