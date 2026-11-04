@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\EmployeeSelfController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\ItemController;
 use App\Http\Controllers\Api\V1\PermissionController;
+use App\Http\Controllers\Api\V1\PurchaseOrderController;
 use App\Http\Controllers\Api\V1\RbacAuditController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\StockAdjustmentController;
@@ -111,5 +112,19 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::get('/{taxRate}', [TaxRateController::class, 'show'])->whereNumber('taxRate')->middleware('can:taxes.view')->name('show');
         Route::patch('/{taxRate}', [TaxRateController::class, 'update'])->whereNumber('taxRate')->middleware('can:taxes.manage')->name('update');
         Route::delete('/{taxRate}', [TaxRateController::class, 'destroy'])->whereNumber('taxRate')->middleware('can:taxes.manage')->name('destroy');
+    });
+
+    Route::prefix('purchase-orders')->name('purchase-orders.')->group(function (): void {
+        Route::get('/', [PurchaseOrderController::class, 'index'])->middleware('can:po.view')->name('index');
+        Route::post('/', [PurchaseOrderController::class, 'store'])->middleware('can:po.create')->name('store');
+        Route::get('/{purchaseOrder}', [PurchaseOrderController::class, 'show'])->whereNumber('purchaseOrder')->middleware('can:po.view')->name('show');
+        Route::patch('/{purchaseOrder}', [PurchaseOrderController::class, 'update'])->whereNumber('purchaseOrder')->middleware('can:po.update')->name('update');
+        Route::delete('/{purchaseOrder}', [PurchaseOrderController::class, 'destroy'])->whereNumber('purchaseOrder')->middleware('can:po.update')->name('destroy');
+        Route::post('/{purchaseOrder}/submit', [PurchaseOrderController::class, 'submit'])->whereNumber('purchaseOrder')->middleware('can:po.submit')->name('submit');
+        Route::post('/{purchaseOrder}/approvals/{step}/approve', [PurchaseOrderController::class, 'approve'])->whereNumber('purchaseOrder')->whereIn('step', ['hr', 'gm'])->name('approvals.approve');
+        Route::post('/{purchaseOrder}/approvals/{step}/reject', [PurchaseOrderController::class, 'reject'])->whereNumber('purchaseOrder')->whereIn('step', ['hr', 'gm'])->name('approvals.reject');
+        Route::post('/{purchaseOrder}/send', [PurchaseOrderController::class, 'send'])->whereNumber('purchaseOrder')->middleware('can:po.send')->name('send');
+        Route::post('/{purchaseOrder}/supplier-confirm', [PurchaseOrderController::class, 'supplierConfirm'])->whereNumber('purchaseOrder')->middleware('can:po.supplier-confirm')->name('supplier-confirm');
+        Route::post('/{purchaseOrder}/cancel', [PurchaseOrderController::class, 'cancel'])->whereNumber('purchaseOrder')->middleware('can:po.update')->name('cancel');
     });
 });
