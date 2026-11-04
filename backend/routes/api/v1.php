@@ -15,6 +15,9 @@ use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\StockAdjustmentController;
 use App\Http\Controllers\Api\V1\StockMovementController;
 use App\Http\Controllers\Api\V1\SupplierController;
+use App\Http\Controllers\Api\V1\TaxOptionController;
+use App\Http\Controllers\Api\V1\TaxRateController;
+use App\Http\Controllers\Api\V1\TaxTypeController;
 use App\Http\Controllers\Api\V1\UserRoleController;
 use App\Http\Middleware\EnsureActiveAccount;
 use Illuminate\Support\Facades\Route;
@@ -91,4 +94,22 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
     Route::get('/stock-adjustments', [StockAdjustmentController::class, 'index'])->middleware('can:inventory.view')->name('inventory.adjustments.index');
     Route::get('/stock-adjustments/{stockAdjustment}', [StockAdjustmentController::class, 'show'])->whereNumber('stockAdjustment')->middleware('can:inventory.view')->name('inventory.adjustments.show');
     Route::get('/stock-movements', [StockMovementController::class, 'index'])->middleware('can:inventory.view')->name('inventory.movements.index');
+
+    Route::get('/taxes/options', TaxOptionController::class)->middleware('can:taxes.view')->name('taxes.options');
+
+    Route::prefix('tax-types')->name('tax-types.')->group(function (): void {
+        Route::get('/', [TaxTypeController::class, 'index'])->middleware('can:taxes.view')->name('index');
+        Route::post('/', [TaxTypeController::class, 'store'])->middleware('can:taxes.manage')->name('store');
+        Route::get('/{taxType}', [TaxTypeController::class, 'show'])->whereNumber('taxType')->middleware('can:taxes.view')->name('show');
+        Route::patch('/{taxType}', [TaxTypeController::class, 'update'])->whereNumber('taxType')->middleware('can:taxes.manage')->name('update');
+        Route::delete('/{taxType}', [TaxTypeController::class, 'destroy'])->whereNumber('taxType')->middleware('can:taxes.manage')->name('destroy');
+    });
+
+    Route::prefix('tax-rates')->name('tax-rates.')->group(function (): void {
+        Route::get('/', [TaxRateController::class, 'index'])->middleware('can:taxes.view')->name('index');
+        Route::post('/', [TaxRateController::class, 'store'])->middleware('can:taxes.manage')->name('store');
+        Route::get('/{taxRate}', [TaxRateController::class, 'show'])->whereNumber('taxRate')->middleware('can:taxes.view')->name('show');
+        Route::patch('/{taxRate}', [TaxRateController::class, 'update'])->whereNumber('taxRate')->middleware('can:taxes.manage')->name('update');
+        Route::delete('/{taxRate}', [TaxRateController::class, 'destroy'])->whereNumber('taxRate')->middleware('can:taxes.manage')->name('destroy');
+    });
 });
