@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\DepartmentController;
 use App\Http\Controllers\Api\V1\EmployeeController;
 use App\Http\Controllers\Api\V1\EmployeeSelfController;
@@ -65,5 +66,13 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::get('/{supplier}', [SupplierController::class,  'show'])->whereNumber('supplier')->middleware('can:suppliers.view')->name('show');
         Route::patch('/{supplier}', [SupplierController::class,  'update'])->whereNumber('supplier')->middleware('can:suppliers.update')->name('update');
         Route::delete('/{supplier}', [SupplierController::class,  'destroy'])->whereNumber('supplier')->middleware('can:suppliers.delete')->name('destroy');
+    });
+
+    Route::prefix('categories')->name('categories.')->group(function (): void {
+        Route::get('/', [CategoryController::class,  'index'])->middleware('can:categories.view')->name('index');
+        Route::post('/', [CategoryController::class,  'store'])->middleware('can:categories.manage')->name('store');
+        Route::get('/{category}', [CategoryController::class,   'show'])->whereNumber('category')->middleware('can:categories.view')->name('show');
+        Route::patch('/{category}', [CategoryController::class, 'update'])->whereNumber('category')->middleware('can:categories.manage')->name('update');
+        Route::delete('/{category}', [CategoryController::class, 'destroy'])->whereNumber('category')->middleware('can:categories.manage')->name('destroy');
     });
 });
