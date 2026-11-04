@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
+use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DepartmentController;
 use App\Http\Controllers\Api\V1\DistributionController;
 use App\Http\Controllers\Api\V1\EmployeeController;
@@ -51,6 +52,14 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
     });
 
     Route::get('/employees/me', EmployeeSelfController::class)->name('employees.me');
+
+    Route::prefix('dashboard')->name('dashboard.')
+        ->middleware('can:reports.view')
+        ->group(function (): void {
+            Route::get('/overview', [DashboardController::class, 'overview'])->name('overview');
+            Route::get('/activity', [DashboardController::class, 'activity'])->name('activity');
+            Route::get('/low-stock', [DashboardController::class, 'lowStock'])->middleware('can:inventory.view')->name('low-stock');
+        });
 
     Route::prefix('departments')->name('departments.')->group(function (): void {
         Route::get('/', [DepartmentController::class, 'index'])->middleware('can:departments.view')->name('index');
