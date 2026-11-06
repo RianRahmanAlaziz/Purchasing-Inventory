@@ -280,7 +280,7 @@ final class BusinessLifecycleIntegrationTest extends TestCase
 
     public function test_above_threshold_requires_hr_then_gm_and_only_one_order(): void
     {
-        $poId = $this->createPo('7000000.01', '1.000');
+        $poId = $this->createPo('20000000.01', '1.000');
         $this->signIn($this->maker);
         $this->postJson("/api/v1/purchase-orders/{$poId}/submit")->assertOk();
         $this->signIn($this->gm);

@@ -31,3 +31,21 @@ test("diskon penuh menghasilkan total nol, termasuk pajak", () => {
 test("daftar barang kosong tidak menghasilkan tagihan", () => {
   assert.deepEqual(orderTotals([]), { subtotal: 0, discount: 0, tax: 0, total: 0 });
 });
+
+test("tarif database memakai faktor dasar pajak setelah diskon", () => {
+  const amount = lineTotals(line({
+    quantity: 2, unitPrice: 10000, discountPercent: 10, taxPercent: 12,
+    taxRate: { id: 1, label: "Tarif uji", direction: "addition", baseFactor: 0.5 },
+  }));
+  assert.equal(amount.tax, 1080);
+  assert.equal(amount.total, 19080);
+});
+
+test("tarif pemotong dari database mengurangi total", () => {
+  const amount = lineTotals(line({
+    quantity: 2, unitPrice: 10000, discountPercent: 10, taxPercent: 2,
+    taxRate: { id: 2, label: "Pemotongan uji", direction: "withholding", baseFactor: 1 },
+  }));
+  assert.equal(amount.tax, -360);
+  assert.equal(amount.total, 17640);
+});

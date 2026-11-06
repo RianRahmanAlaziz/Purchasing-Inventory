@@ -9,6 +9,7 @@ use App\Domain\Authentication\Actions\LogoutUser;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Authentication\LoginRequest;
 use App\Http\Resources\Api\V1\UserResource;
+use App\Models\User;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -38,7 +39,7 @@ final class AuthController extends Controller
                 'expires_at' => $result['token']
                     ->accessToken
                     ->expires_at?->toIso8601String(),
-                'user' => new UserResource($result['user']),
+                'user' => $this->sessionUser($result['user'], $request),
             ],
             message: 'Login berhasil.',
         )->header('Cache-Control', 'no-store');
@@ -48,7 +49,7 @@ final class AuthController extends Controller
     {
         return ApiResponse::success(
             data: [
-                'user' => new UserResource($request->user()),
+                'user' => $this->sessionUser($request->user(), $request),
             ],
             message: 'Profil berhasil diambil.',
         )->header('Cache-Control', 'no-store');
@@ -69,5 +70,16 @@ final class AuthController extends Controller
             data: null,
             message: 'Logout berhasil.',
         )->header('Cache-Control', 'no-store');
+    }
+
+    /** @return array<string, mixed> */
+    private function sessionUser(User $user, Request $request): array
+    {
+        return [
+            ...(new UserResource($user))->toArray($request),
+            'default_company_id' => $user->default_company_id,
+            'permissions' => $user->getAllPermissions()->where('guard_name', 'web')
+                ->pluck('name')->unique()->sort()->values()->all(),
+        ];
     }
 }

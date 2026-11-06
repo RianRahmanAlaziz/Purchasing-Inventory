@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -13,20 +14,19 @@ final class RolePermissionSeeder extends Seeder
 {
     public function run(): void
     {
-
-        if (
-            Role::query()
-                ->where('guard_name', 'web')
-                ->exists()
-        ) {
-            $this->command?->warn('RBAC sudah diinisialisasi. Seeder dilewati agar perubahan role dan permission tidak tertimpa.');
-
-            return;
-        }
-
-        app(PermissionRegistrar::class)->forgetCachedPermissions();
-
         $permissions = [
+            'companies.view',
+            'companies.manage',
+            'invoices.view',
+            'invoices.manage',
+            'payments.view',
+            'payments.manage',
+            'payments.verify',
+            'documents.view',
+            'documents.manage',
+            'documents.send',
+            'documents.receive',
+            'documents.verify',
             'users.view',
             'users.manage',
             'roles.manage',
@@ -37,6 +37,9 @@ final class RolePermissionSeeder extends Seeder
             'suppliers.view',
             'suppliers.create',
             'suppliers.update',
+            'suppliers.delete',
+            'categories.view',
+            'categories.manage',
             'items.view',
             'items.manage',
             'taxes.view',
@@ -51,12 +54,14 @@ final class RolePermissionSeeder extends Seeder
             'po.reject.hr',
             'po.approve.gm',
             'po.reject.gm',
+            'orders.view',
             'grn.view',
             'grn.create',
             'grn.confirm',
             'inventory.view',
             'inventory.adjust',
             'distribution.view',
+            'distribution.create',
             'distribution.prepare',
             'distribution.send',
             'distribution.approve',
@@ -64,14 +69,11 @@ final class RolePermissionSeeder extends Seeder
             'reports.view',
         ];
 
-        foreach ($permissions as $name) {
-            Permission::findOrCreate($name, 'web');
-        }
-
         $roles = [
             'super_admin' => $permissions,
 
             'general_manager' => [
+                'companies.view',
                 'po.view',
                 'po.approve.gm',
                 'po.reject.gm',
@@ -83,6 +85,7 @@ final class RolePermissionSeeder extends Seeder
             ],
 
             'hr' => [
+                'companies.view',
                 'departments.view',
                 'departments.manage',
                 'employees.view',
@@ -112,6 +115,7 @@ final class RolePermissionSeeder extends Seeder
             ],
 
             'staff_hr' => [
+                'companies.view',
                 'departments.view',
                 'employees.view',
                 'suppliers.view',
@@ -134,11 +138,41 @@ final class RolePermissionSeeder extends Seeder
             ],
         ];
 
-        foreach ($roles as $name => $rolePermissions) {
-            $role = Role::findOrCreate($name, 'web');
-            $role->syncPermissions($rolePermissions);
-        }
+        $registrar = app(PermissionRegistrar::class);
+        $registrar->forgetCachedPermissions();
 
-        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        DB::transaction(function () use ($permissions, $roles): void {
+            $existingRoles = Role::query()->where('guard_name', 'web')->lockForUpdate()->get();
+            $first = $existingRoles->first();
+
+            if ($first !== null && (
+                $existingRoles->count() !== 1
+                || $first->name !== 'super_admin'
+                || $first->permissions()->exists()
+                || $first->users()->exists()
+            )) {
+                $this->command?->warn('RBAC sudah diinisialisasi. Seeder dilewati agar perubahan role dan permission tidak tertimpa.');
+
+                return;
+            }
+
+            $permissionsByName = [];
+            foreach ($permissions as $name) {
+                $permissionsByName[$name] = Permission::query()->firstOrCreate([
+                    'name' => $name,
+                    'guard_name' => 'web',
+                ]);
+            }
+
+            foreach ($roles as $name => $rolePermissions) {
+                $role = Role::findOrCreate($name, 'web');
+                $role->syncPermissions(array_map(
+                    static fn (string $permission): Permission => $permissionsByName[$permission],
+                    $rolePermissions,
+                ));
+            }
+        }, attempts: 3);
+
+        $registrar->forgetCachedPermissions();
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources\Api\V1;
 
+use App\Domain\Purchasing\Support\PoMoney;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -18,12 +19,18 @@ final class PurchaseOrderResource extends JsonResource
             'supplier_id' => $this->supplier_id,
             'supplier_name_snapshot' => $this->supplier_name_snapshot,
             'supplier_code_snapshot' => $this->supplier_code_snapshot,
+            'supplier_address_snapshot' => $this->supplier_address_snapshot,
+            'company_id' => $this->company_id,
+            'company_snapshot' => $this->company_snapshot,
+            'tax_scope' => $this->tax_scope,
             'requested_for_employee_id' => $this->requested_for_employee_id,
             'requested_for_department_id' => $this->requested_for_department_id,
             'created_by' => $this->created_by,
             'order_date' => $this->order_date?->format('Y-m-d'),
             'expected_date' => $this->expected_date?->format('Y-m-d'),
             'subtotal' => $this->subtotal,
+            'gross_subtotal' => PoMoney::format(PoMoney::add(PoMoney::cents((string) $this->subtotal), PoMoney::cents((string) $this->discount_total))),
+            'discount_total' => $this->discount_total,
             'tax_addition_total' => $this->tax_addition_total,
             'tax_withholding_total' => $this->tax_withholding_total,
             'total_amount' => $this->total_amount,
@@ -44,6 +51,15 @@ final class PurchaseOrderResource extends JsonResource
                 'quantity' => $entry->quantity,
                 'unit_price' => $entry->unit_price,
                 'line_subtotal' => $entry->line_subtotal,
+                'discount_percent' => $entry->discount_percent,
+                'discount_amount' => $entry->discount_amount,
+                'tax_rate_id' => $entry->tax_rate_id,
+                'tax_label' => $entry->tax_label_snapshot,
+                'tax_direction' => $entry->tax_direction_snapshot,
+                'tax_rate_percent' => $entry->tax_rate_percent_snapshot,
+                'tax_base_factor' => $entry->tax_base_factor_snapshot,
+                'taxable_base_amount' => $entry->taxable_base_amount,
+                'tax_amount' => $entry->tax_amount,
                 'notes' => $entry->notes,
             ])->all()),
             'taxes' => $this->whenLoaded('taxes', fn (): array => $this->taxes->map(fn ($tax): array => [
@@ -63,6 +79,7 @@ final class PurchaseOrderResource extends JsonResource
                 'step' => $approval->role_name,
                 'status' => $approval->status,
                 'decided_by' => $approval->decided_by,
+                'decided_by_name' => $approval->decider?->name,
                 'decided_at' => $approval->decided_at?->toIso8601String(),
                 'rejection_reason' => $approval->rejection_reason,
             ])->all()),

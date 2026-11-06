@@ -42,7 +42,7 @@ export function DataModuleView({ slug }: { slug: string }) {
   }
   return <>
     <div className="page-heading"><div><div className="eyebrow"><span className="status-dot"/> WORKSPACE / MANAGEMENT</div><h1>{title}</h1><p>{config.description}</p></div><div className="heading-actions"><ExportButton disabled={!ready} filename={`${slug}.csv`} columns={columns} records={filtered.map(record => ({ date: record.date, cells: values(record) }))}/><Button disabled={!ready} onClick={create}><Icon name="plus" size={17}/> Tambah {title}</Button></div></div>
-    <p className="form-hint">Data tersimpan di browser ini. Perubahan transaksi belum otomatis memperbarui stok, PO, atau modul lain.</p>
+    <p className="form-hint">Modul demo. Data hanya tersimpan di browser ini.</p>
     {notice && <p className="form-hint" role="status">{notice}</p>}{error && !selection && <p className="form-error" role="alert">{error}</p>}
     <section className="panel module-panel"><div className="panel-header"><div><h2>Daftar {title} <span className="count-pill">{filtered.length}</span></h2></div></div>
       <div className="table-toolbar"><label className="table-search"><Icon name="search" size={18}/><input aria-label={`Cari ${title}`} placeholder={`Cari ${title.toLowerCase()}...`} value={query} onChange={event => setQuery(event.target.value)}/></label><select aria-label="Filter status" value={status} onChange={event => setStatus(event.target.value)}><option>Semua status</option>{schema.statuses.map(value => <option key={value}>{value}</option>)}</select></div>

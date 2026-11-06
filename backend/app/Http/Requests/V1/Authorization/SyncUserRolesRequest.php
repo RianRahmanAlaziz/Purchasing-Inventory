@@ -18,7 +18,7 @@ final class SyncUserRolesRequest extends FormRequest
     {
         return [
             'roles' => [
-                'required',
+                'present',
                 'array',
                 'max:10',
             ],

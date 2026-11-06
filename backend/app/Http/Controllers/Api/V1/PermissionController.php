@@ -30,10 +30,10 @@ final class PermissionController extends Controller
         RbacAuditLogger $audit
     ): JsonResponse {
         $actor = $request->user();
-        $name = $request->validated('name');
+        $attributes = $request->validated();
 
-        $result = $mutation->execute($actor, function () use ($request, $actor, $name, $audit): array {
-            $permission = Permission::create(['name' => $name, 'guard_name' => 'web']);
+        $result = $mutation->execute($actor, function () use ($request, $actor, $attributes, $audit): array {
+            $permission = Permission::create([...$attributes, 'guard_name' => 'web']);
             $data = $this->format($permission);
             $audit->record($actor, $request, 'permission.created', 'permission', $permission->id, null, $data);
 

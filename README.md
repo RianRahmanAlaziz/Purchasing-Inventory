@@ -4,7 +4,7 @@ Aplikasi berbasis web untuk mengelola proses **pengadaan, penerimaan, pembayaran
 
 > **Referensi fungsional:** Buku Manual Pengguna Sistem Purchasing & Inventory, versi **1.0** — **3 November 2026**.
 >
-> README ini menjelaskan alur dan fitur berdasarkan buku manual. Versi framework, struktur repositori, perintah seeder, dan konfigurasi deployment perlu disesuaikan dengan kode sumber aktual.
+> Bagian fitur merangkum buku manual. Bagian Menjalankan Aplikasi menjelaskan integrasi Next.js dan Laravel yang tersedia di repositori.
 
 ## Daftar Isi
 
@@ -43,9 +43,9 @@ Aplikasi berbasis web untuk mengelola proses **pengadaan, penerimaan, pembayaran
 
 - **Backend:** Laravel (PHP)
 - **Database:** MySQL
-- **Antarmuka:** aplikasi web
+- **Frontend:** Next.js (React dan TypeScript)
 
-Versi PHP, Laravel, dependency frontend, dan layanan pendukung **tidak disebutkan dalam buku manual**. Periksa `composer.json`, `package.json` (jika ada), dan konfigurasi proyek untuk persyaratan yang tepat.
+Lihat `backend/composer.json` dan `frontend/package.json` untuk persyaratan runtime.
 
 ## Peran dan Hak Akses
 
@@ -136,63 +136,48 @@ Status distribusi: `Requested` → `Approved` → `Preparing` → `Sent` → `Re
 
 ## Menjalankan Aplikasi
 
-> **Catatan:** Langkah berikut merupakan **panduan umum untuk proyek Laravel**, bukan prosedur instalasi yang diverifikasi dari kode repositori. Sesuaikan dengan file dan dependensi proyek Anda.
+Jalankan Laravel dan Next.js dari dua terminal. Browser mengakses Next.js, lalu Next.js meneruskan permintaan ke Laravel. Login memakai akun Laravel dan sesi disimpan dalam cookie HttpOnly.
 
-**Prasyarat:** PHP, Composer, MySQL, dan lingkungan pengembangan yang kompatibel dengan versi Laravel di repositori. Node.js/npm mungkin diperlukan apabila proyek menggunakan build aset frontend.
+1. Di terminal backend, siapkan MySQL dan konfigurasi `backend/.env`. Untuk instalasi baru, salin `.env.example`, atur koneksi MySQL, lalu jalankan:
 
-1. **Clone repositori**
-
-   ```bash
-   git clone <URL-REPOSITORI>
-   cd <NAMA-FOLDER-REPOSITORI>
-   ```
-
-2. **Instal dependensi PHP**
-
-   ```bash
+   ```sh
+   cd backend
    composer install
-   ```
-
-3. **Siapkan konfigurasi aplikasi** (jika terdapat `.env.example`)
-
-   ```bash
-   cp .env.example .env
    php artisan key:generate
-   ```
-
-4. **Buat database MySQL**, lalu sesuaikan nilai berikut di `.env`:
-
-   ```dotenv
-   DB_CONNECTION=mysql
-   DB_HOST=127.0.0.1
-   DB_PORT=3306
-   DB_DATABASE=nama_database
-   DB_USERNAME=username_database
-   DB_PASSWORD=password_database
-   ```
-
-5. **Jalankan migrasi database** jika proyek menyediakan migration yang diperlukan:
-
-   ```bash
    php artisan migrate
+   php artisan db:seed
+   php artisan serve --host=127.0.0.1 --port=8000
    ```
 
-   > Jalankan seeder **hanya jika** tersedia dan telah ditinjau. Jangan menjalankan `migrate:fresh` pada database yang berisi data penting.
+   Seeder meminta email, nama, dan kata sandi Super Admin. Tekan Enter pada pertanyaan email untuk melewati pembuatan akun dan memakai akun aktif yang sudah ada. Akun dengan role atau akun yang terhubung ke karyawan aktif dapat masuk.
 
-6. **Jika proyek memakai build frontend**, instal dependensi dan jalankan build sesuai script di `package.json`, misalnya:
+2. Di terminal frontend:
 
-   ```bash
-   npm install
-   npm run build
+   ```sh
+   cd frontend
+   npm ci
+   npm run dev
    ```
 
-7. **Jalankan server lokal**
+   Buka [workspace lokal](http://localhost:3000). Bila alamat Laravel berbeda, set `LARAVEL_API_URL` di `frontend/.env.local` ke alamat server Laravel tanpa akhiran `/api/v1`. Bila Next.js berada di belakang reverse proxy, set `APP_ORIGIN` ke origin publik Next.js, misalnya `https://inventory.example.com`.
 
-   ```bash
-   php artisan serve
-   ```
+### Izin modul
 
-   Secara umum aplikasi dapat diakses melalui `http://127.0.0.1:8000`, kecuali konfigurasi lokal berbeda.
+Laravel memeriksa izin akun untuk setiap aksi. Seeder memasang izin modul saat menginisialisasi RBAC. Untuk role yang sudah dikonfigurasi, perubahan izin dilakukan lewat API RBAC.
+
+### Cakupan integrasi
+
+Dashboard, profil perusahaan/PT, supplier, kategori, barang, departemen, karyawan, jenis/tarif pajak, PO dan persetujuannya, order, penerimaan, distribusi, mutasi stok, tagihan, pembayaran, dokumen, pengguna, dan RBAC menggunakan Laravel. Jalankan `php artisan migrate` saat memperbarui aplikasi agar tabel dan izin modul baru tersedia.
+
+PO menyimpan snapshot PT penerbit, alamat supplier, diskon, dan pajak per barang. Tambah dan edit memakai modal yang sama; hapus dan workflow tetap mengikuti status serta izin backend. Profil PT lama dapat dipindahkan melalui tombol **Impor PT dari browser**. Draft PO lama dimuat ke form dan dihapus dari browser hanya setelah berhasil tersimpan di server. Data demo modul lama tidak dicampur otomatis dengan data operasional; penyimpanan lamanya tidak dihapus.
+
+Supplier dan barang pada PO dapat diketik bebas dengan sugesti riwayat PO; sugesti barang juga mencakup stok dan SKU. Nama baru dibuat sebagai master saat PO berhasil disimpan, sesuai izin `suppliers.create` / `items.manage`. Barang baru memerlukan kategori dan dimulai dengan stok nol; stok bertambah melalui konfirmasi penerimaan. Pemilihan sugesti mempertahankan ID stok tanpa mengganti nama master lama.
+
+Menu **Tagihan Supplier** mencatat total tagihan. **Pembayaran** mencatat DP/cicilan dan verifikasinya; hanya pembayaran terverifikasi yang mengurangi sisa tagihan. **Kuitansi & Dokumen** mendukung berkas privat PDF, PNG, JPG, dan WebP, maksimal 5 MB, dengan alur unggah, kirim, terima, lalu verifikasi. Lihat [kontrak modul terhubung](docs/api/CONNECTED_MODULES.md).
+
+Menu **Pengguna** memerlukan `users.view`. Pembuatan dan perubahan akun memerlukan `users.manage` dan `roles.manage`. Menu **Role & Izin**, penugasan role, dan audit memerlukan `roles.manage`.
+
+Akun karyawan yang tidak memiliki izin melihat master barang mengisi permintaan distribusi dengan ID barang dari petugas. ID tersedia di detail Stok Barang.
 
 ## Panduan Penggunaan Singkat
 

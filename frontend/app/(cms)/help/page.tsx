@@ -1,1 +1,16 @@
-export default function HelpPage() { return <><div className="page-heading"><div><div className="eyebrow">WORKSPACE / DUKUNGAN</div><h1>Pusat Bantuan</h1><p>Panduan singkat mengelola pengadaan dan persediaan.</p></div></div><section className="panel help-panel"><h2>Pertanyaan umum</h2>{[{q:"Bagaimana membuat purchase order?",a:"Buka Purchase Order, pilih Buat Purchase Order, isi supplier, barang, jumlah, dan harga. Simpan sebagai draft. Dalam demo ini, PO disimpan di browser Anda."},{q:"Kapan stok barang bertambah?",a:"Dalam alur operasional, stok bertambah setelah Goods Receipt dikonfirmasi. Stok masuk dihitung dari jumlah diterima dikurangi barang rusak."},{q:"Apa arti stok menipis?",a:"Barang memiliki stok menipis jika jumlah persediaan saat ini sama dengan atau di bawah batas minimum."},{q:"Apakah data terhubung ke database?",a:"Antarmuka ini menggunakan data contoh. Pencarian, filter, ekspor, dan pembuatan draft PO dapat dicoba. Integrasi Laravel dan database belum tersedia."}].map(item => <details key={item.q}><summary>{item.q}</summary><p>{item.a}</p></details>)}</section></>; }
+const topics = [
+  { question: "Bagaimana membuat purchase order?", answer: "Pilih PT penerbit dan karyawan, lalu ketik nama supplier serta barang atau pilih sugesti riwayat PO dan stok. Barang baru memerlukan kategori dan izin pembuatan. Lengkapi diskon, pajak, serta catatan, lalu simpan draft. Buka detail PO untuk mengajukan persetujuan." },
+  { question: "Kapan stok barang berubah?", answer: "Stok bertambah saat penerimaan dikonfirmasi dan berkurang saat distribusi dikirim. Koreksi saldo melalui Sesuaikan stok pada detail barang." },
+  { question: "Di mana data disimpan?", answer: "Profil PT, master data, PO, tagihan, pembayaran, dokumen, akun, dan izin tersimpan di server. Pengelola dapat memindahkan profil PT lama melalui tombol Impor PT dari browser." },
+  { question: "Kapan tagihan menjadi lunas?", answer: "Tagihan lunas setelah seluruh nominal pembayaran diverifikasi. Pembayaran yang masih menunggu pemeriksaan belum mengurangi sisa tagihan." },
+  { question: "Bagaimana mengelola dokumen?", answer: "Unggah PDF, PNG, JPG, atau WebP maksimal 5 MB. Catat pengiriman, penerimaan, lalu verifikasi sesuai hak akses. Unduhan berkas memerlukan akun yang berizin." },
+];
+
+export default function HelpPage() {
+  return <>
+    <div className="page-heading"><div><div className="eyebrow">WORKSPACE / DUKUNGAN</div><h1>Pusat Bantuan</h1><p>Panduan singkat mengelola pengadaan dan persediaan.</p></div></div>
+    <section className="panel help-panel"><h2>Pertanyaan umum</h2>
+      {topics.map(topic => <details key={topic.question}><summary>{topic.question}</summary><p>{topic.answer}</p></details>)}
+    </section>
+  </>;
+}

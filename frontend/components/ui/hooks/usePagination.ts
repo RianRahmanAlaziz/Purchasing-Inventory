@@ -1,5 +1,5 @@
 ﻿"use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { paginationRange } from "@/lib/pagination";
 
 export function usePagination<T>(items: T[], resetKey = "", initialPageSize = 10) {
@@ -9,9 +9,11 @@ export function usePagination<T>(items: T[], resetKey = "", initialPageSize = 10
   if (previousKey !== resetKey) {
     setPreviousKey(resetKey);
     setCurrentPage(1);
+  } else {
+    const lastPage = paginationRange(items.length, currentPage, pageSize).pageCount;
+    if (currentPage > lastPage) setCurrentPage(lastPage);
   }
   const range = paginationRange(items.length, previousKey === resetKey ? currentPage : 1, pageSize);
-  useEffect(() => { setCurrentPage(current => Math.min(current, range.pageCount)); }, [range.pageCount]);
   return {
     ...range, pageSize, total: items.length,
     items: items.slice(range.offset, range.offset + pageSize),

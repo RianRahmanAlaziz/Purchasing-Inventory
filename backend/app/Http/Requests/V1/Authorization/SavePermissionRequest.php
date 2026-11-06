@@ -25,6 +25,8 @@ final class SavePermissionRequest extends FormRequest
                 Rule::unique('permissions', 'name')
                     ->where('guard_name', 'web'),
             ],
+            'display_name' => ['sometimes', 'nullable', 'string', 'max:150'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
         ];
     }
 }

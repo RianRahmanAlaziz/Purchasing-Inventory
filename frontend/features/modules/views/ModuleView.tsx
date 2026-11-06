@@ -1,6 +1,7 @@
+import { ApiModuleView } from "./ApiModuleView";
 import { DataModuleView } from "./DataModuleView";
-import { PurchaseOrdersModuleView } from "@/features/purchase-orders/views/PurchaseOrdersModuleView";
+import { apiModules } from "../constants/apiModules";
 
 export function ModuleView({ slug }: { slug: string }) {
-  return slug === "purchase-orders" ? <PurchaseOrdersModuleView/> : <DataModuleView key={slug} slug={slug}/>;
+  return apiModules[slug] ? <ApiModuleView key={slug} slug={slug}/> : <DataModuleView key={slug} slug={slug}/>;
 }

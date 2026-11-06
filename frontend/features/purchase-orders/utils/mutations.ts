@@ -15,9 +15,17 @@ function validateDraft(order: PurchaseOrder): PurchaseOrder {
     !Number.isFinite(line.quantity) || line.quantity < .01 || line.quantity > 1000000 ||
     !Number.isFinite(line.unitPrice) || line.unitPrice < .01 || line.unitPrice > 1000000000 ||
     !Number.isFinite(line.discountPercent) || line.discountPercent < 0 || line.discountPercent > 100 ||
-    !Number.isFinite(line.taxPercent) || line.taxPercent < 0 || line.taxPercent > 100
+    !Number.isFinite(line.taxPercent) || line.taxPercent < 0 || line.taxPercent > 100 ||
+    (line.taxRate !== undefined && (
+      !Number.isInteger(line.taxRate.id) || line.taxRate.id <= 0 ||
+      typeof line.taxRate.label !== "string" || !line.taxRate.label.trim() ||
+      !["addition", "withholding"].includes(line.taxRate.direction) ||
+      !Number.isFinite(line.taxRate.baseFactor) || line.taxRate.baseFactor <= 0 || line.taxRate.baseFactor > 100
+    ))
   )) throw new Error("Lengkapi minimal satu barang dengan jumlah, satuan, harga, diskon, dan pajak yang valid.");
-  return { ...order, amount: orderTotals(order.lines).total, items: order.lines.length };
+  const total = orderTotals(order.lines).total;
+  if (total < 0) throw new Error("Pajak pemotong tidak boleh membuat total PO negatif.");
+  return { ...order, amount: total, items: order.lines.length };
 }
 
 export function insertPurchaseOrder(orders: PurchaseOrder[], order: PurchaseOrder): PurchaseOrder[] {

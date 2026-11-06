@@ -212,11 +212,27 @@ final class PurchaseOrderApiTest extends TestCase
             ->assertJsonPath('data.requires_gm_approval', false);
     }
 
-    public function test_exactly_seven_million_needs_only_hr_and_creates_one_order(): void
+    public function test_below_twenty_million_needs_only_hr(): void
     {
         $maker = $this->actor(['po.submit']);
         $hr = $this->actor(['po.approve.hr']);
-        $po = $this->draft($maker, '7000000.00');
+        $po = $this->draft($maker, '19999999.99');
+        $this->assertSame('20000000.00', $po->approval_threshold_amount);
+        $this->assertFalse($po->requires_gm_approval);
+
+        $this->submitAs($maker, $po);
+        $this->assertDatabaseCount('purchase_order_approvals', 1);
+        $this->assertDatabaseHas('purchase_order_approvals', ['purchase_order_id' => $po->id, 'role_name' => 'hr']);
+        $this->approveAs($hr, $po, 'hr');
+        $this->assertDatabaseHas('purchase_orders', ['id' => $po->id, 'status' => 'approved']);
+        $this->assertDatabaseCount('orders', 1);
+    }
+
+    public function test_exactly_twenty_million_needs_only_hr_and_creates_one_order(): void
+    {
+        $maker = $this->actor(['po.submit']);
+        $hr = $this->actor(['po.approve.hr']);
+        $po = $this->draft($maker, '20000000.00');
         $this->submitAs($maker, $po);
         $this->assertDatabaseHas('purchase_orders', ['id' => $po->id, 'requires_gm_approval' => false]);
         $this->assertDatabaseCount('purchase_order_approvals', 1);
@@ -228,15 +244,15 @@ final class PurchaseOrderApiTest extends TestCase
         $this->assertDatabaseCount('orders', 1);
     }
 
-    public function test_above_seven_million_requires_hr_then_gm(): void
+    public function test_above_twenty_million_requires_hr_then_gm(): void
     {
         $maker = $this->actor(['po.submit']);
         $hr = $this->actor(['po.approve.hr']);
         $gm = $this->actor(['po.approve.gm']);
-        $po = $this->draft($maker, '7000000.01');
+        $po = $this->draft($maker, '20000000.01');
         $this->submitAs($maker, $po);
         $this->assertDatabaseCount('purchase_order_approvals', 2);
-        $this->assertDatabaseHas('purchase_orders', ['id' => $po->id, 'requires_gm_approval' => true]);
+        $this->assertDatabaseHas('purchase_orders', ['id' => $po->id, 'requires_gm_approval' => true, 'approval_threshold_amount' => '20000000.00']);
 
         $this->signIn($gm);
         $this->postJson("/api/v1/purchase-orders/{$po->id}/approvals/gm/approve")
@@ -260,6 +276,43 @@ final class PurchaseOrderApiTest extends TestCase
         $this->postJson("/api/v1/purchase-orders/{$po->id}/approvals/hr/approve")
             ->assertForbidden();
         $this->assertDatabaseHas('purchase_order_approvals', ['purchase_order_id' => $po->id, 'status' => 'pending']);
+    }
+
+    public function test_approval_responses_include_reviewer_names(): void
+    {
+        $maker = $this->actor(['po.submit', 'po.view']);
+        $hr = $this->actor(['po.approve.hr']);
+        $gm = $this->actor(['po.approve.gm']);
+        $po = $this->draft($maker, '20000000.01');
+
+        $this->signIn($maker);
+        $this->postJson("/api/v1/purchase-orders/{$po->id}/submit")
+            ->assertOk()
+            ->assertJsonPath('data.approvals.0.decided_by_name', null)
+            ->assertJsonPath('data.approvals.1.decided_by_name', null);
+
+        $this->signIn($hr);
+        $this->postJson("/api/v1/purchase-orders/{$po->id}/approvals/hr/approve")
+            ->assertOk()
+            ->assertJsonPath('data.approvals.0.decided_by_name', $hr->name)
+            ->assertJsonPath('data.approvals.1.decided_by_name', null);
+
+        $this->signIn($gm);
+        $this->postJson("/api/v1/purchase-orders/{$po->id}/approvals/gm/approve")
+            ->assertOk()
+            ->assertJsonPath('data.approvals.0.decided_by_name', $hr->name)
+            ->assertJsonPath('data.approvals.1.decided_by_name', $gm->name);
+
+        $hr->update(['is_active' => false]);
+        $this->signIn($maker);
+        $this->getJson("/api/v1/purchase-orders/{$po->id}")
+            ->assertOk()
+            ->assertJsonPath('data.approvals.0.decided_by_name', $hr->name)
+            ->assertJsonPath('data.approvals.1.decided_by_name', $gm->name);
+        $this->getJson('/api/v1/purchase-orders')
+            ->assertOk()
+            ->assertJsonPath('data.0.approvals.0.decided_by_name', $hr->name)
+            ->assertJsonPath('data.0.approvals.1.decided_by_name', $gm->name);
     }
 
     public function test_user_without_hr_approval_permission_cannot_approve(): void
@@ -308,7 +361,8 @@ final class PurchaseOrderApiTest extends TestCase
         $this->submitAs($maker, $po);
         $this->signIn($hr);
         $this->postJson("/api/v1/purchase-orders/{$po->id}/approvals/hr/reject", ['reason' => 'Tidak sesuai'])
-            ->assertOk()->assertJsonPath('data.status', 'rejected');
+            ->assertOk()->assertJsonPath('data.status', 'rejected')
+            ->assertJsonPath('data.approvals.0.decided_by_name', $hr->name);
         $this->assertDatabaseCount('orders', 0);
     }
 
@@ -392,7 +446,7 @@ final class PurchaseOrderApiTest extends TestCase
     {
         $maker = $this->actor(['po.submit']);
         $both = $this->actor(['po.approve.hr', 'po.approve.gm']);
-        $po = $this->draft($maker, '7000000.01');
+        $po = $this->draft($maker, '20000000.01');
         $this->submitAs($maker, $po);
         $this->approveAs($both, $po, 'hr');
         $this->signIn($both);

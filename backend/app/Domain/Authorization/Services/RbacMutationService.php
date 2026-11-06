@@ -30,12 +30,14 @@ final class RbacMutationService
                     throw new LogicException('RBAC operation lock is missing.');
                 }
 
+                app(PermissionRegistrar::class)->forgetCachedPermissions();
+                abort_unless($this->canManageRoles($actor->fresh()), 403);
+
                 $result = $operation();
 
                 app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-                $freshActor = $actor->fresh();
-                if ($freshActor === null || ! $freshActor->is_active || ! $freshActor->can('roles.manage')) {
+                if (! $this->canManageRoles($actor->fresh())) {
                     abort(409, 'Perubahan ini akan mencabut akses pengelolaan milik Anda.');
                 }
 
@@ -49,6 +51,11 @@ final class RbacMutationService
             // A failed transaction must not leave stale Spatie permission cache.
             app(PermissionRegistrar::class)->forgetCachedPermissions();
         }
+    }
+
+    private function canManageRoles(?User $actor): bool
+    {
+        return $actor !== null && $actor->is_active && $actor->can('roles.manage');
     }
 
     private function activeManagerExists(): bool

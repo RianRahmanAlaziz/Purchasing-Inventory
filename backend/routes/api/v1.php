@@ -4,17 +4,22 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
+use App\Http\Controllers\Api\V1\CompanyController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DepartmentController;
 use App\Http\Controllers\Api\V1\DistributionController;
+use App\Http\Controllers\Api\V1\DocumentController;
 use App\Http\Controllers\Api\V1\EmployeeController;
 use App\Http\Controllers\Api\V1\EmployeeSelfController;
 use App\Http\Controllers\Api\V1\GoodsReceiptController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\InvoiceController;
 use App\Http\Controllers\Api\V1\ItemController;
 use App\Http\Controllers\Api\V1\OrderController;
+use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\PermissionController;
 use App\Http\Controllers\Api\V1\PurchaseOrderController;
+use App\Http\Controllers\Api\V1\PurchaseOrderSuggestionController;
 use App\Http\Controllers\Api\V1\RbacAuditController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\StockAdjustmentController;
@@ -23,6 +28,7 @@ use App\Http\Controllers\Api\V1\SupplierController;
 use App\Http\Controllers\Api\V1\TaxOptionController;
 use App\Http\Controllers\Api\V1\TaxRateController;
 use App\Http\Controllers\Api\V1\TaxTypeController;
+use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\UserRoleController;
 use App\Http\Middleware\EnsureActiveAccount;
 use Illuminate\Support\Facades\Route;
@@ -47,11 +53,58 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::get('/permissions', [PermissionController::class, 'index']);
         Route::post('/permissions', [PermissionController::class, 'store']);
         Route::patch('/permissions/{permission}', [PermissionController::class, 'update']);
-        Route::put('/users/{user}/roles', [UserRoleController::class, 'update']);
+        Route::put('/users/{user}/roles', [UserRoleController::class, 'update'])->whereNumber('user');
         Route::get('/audit-logs', RbacAuditController::class);
     });
 
+    Route::prefix('users')->name('users.')->group(function (): void {
+        Route::get('/', [UserController::class, 'index'])->middleware('can:users.view')->name('index');
+        Route::post('/', [UserController::class, 'store'])->middleware(['can:users.manage', 'can:roles.manage'])->name('store');
+        Route::patch('/{user}', [UserController::class, 'update'])->whereNumber('user')
+            ->middleware(['can:users.manage', 'can:roles.manage'])->name('update');
+    });
+
     Route::get('/employees/me', EmployeeSelfController::class)->name('employees.me');
+
+    Route::prefix('invoices')->name('invoices.')->group(function (): void {
+        Route::get('/', [InvoiceController::class, 'index'])->middleware('can:invoices.view')->name('index');
+        Route::post('/', [InvoiceController::class, 'store'])->middleware('can:invoices.manage')->name('store');
+        Route::get('/{invoice}', [InvoiceController::class, 'show'])->whereNumber('invoice')->middleware('can:invoices.view')->name('show');
+        Route::patch('/{invoice}', [InvoiceController::class, 'update'])->whereNumber('invoice')->middleware('can:invoices.manage')->name('update');
+        Route::delete('/{invoice}', [InvoiceController::class, 'destroy'])->whereNumber('invoice')->middleware('can:invoices.manage')->name('destroy');
+    });
+
+    Route::prefix('payments')->name('payments.')->group(function (): void {
+        Route::get('/', [PaymentController::class, 'index'])->middleware('can:payments.view')->name('index');
+        Route::post('/', [PaymentController::class, 'store'])->middleware('can:payments.manage')->name('store');
+        Route::get('/{payment}', [PaymentController::class, 'show'])->whereNumber('payment')->middleware('can:payments.view')->name('show');
+        Route::patch('/{payment}', [PaymentController::class, 'update'])->whereNumber('payment')->middleware('can:payments.manage')->name('update');
+        Route::delete('/{payment}', [PaymentController::class, 'destroy'])->whereNumber('payment')->middleware('can:payments.manage')->name('destroy');
+        Route::post('/{payment}/verify', [PaymentController::class, 'verify'])->whereNumber('payment')->middleware('can:payments.verify')->name('verify');
+        Route::post('/{payment}/reject', [PaymentController::class, 'reject'])->whereNumber('payment')->middleware('can:payments.verify')->name('reject');
+    });
+
+    Route::prefix('documents')->name('documents.')->group(function (): void {
+        Route::get('/', [DocumentController::class, 'index'])->middleware('can:documents.view')->name('index');
+        Route::post('/', [DocumentController::class, 'store'])->middleware('can:documents.manage')->name('store');
+        Route::get('/{document}', [DocumentController::class, 'show'])->whereNumber('document')->middleware('can:documents.view')->name('show');
+        Route::patch('/{document}', [DocumentController::class, 'update'])->whereNumber('document')->middleware('can:documents.manage')->name('update');
+        Route::delete('/{document}', [DocumentController::class, 'destroy'])->whereNumber('document')->middleware('can:documents.manage')->name('destroy');
+        Route::get('/{document}/download', [DocumentController::class, 'download'])->whereNumber('document')->middleware('can:documents.view')->name('download');
+        foreach (['send', 'receive', 'verify'] as $action) {
+            Route::post('/{document}/'.$action, [DocumentController::class, 'transition'])->whereNumber('document')->defaults('action', $action)
+                ->middleware('can:documents.'.$action)->name($action);
+        }
+    });
+
+    Route::prefix('companies')->name('companies.')->group(function (): void {
+        Route::get('/', [CompanyController::class, 'index'])->middleware('can:companies.view')->name('index');
+        Route::post('/', [CompanyController::class, 'store'])->middleware('can:companies.manage')->name('store');
+        Route::get('/{company}', [CompanyController::class, 'show'])->whereNumber('company')->middleware('can:companies.view')->name('show');
+        Route::patch('/{company}', [CompanyController::class, 'update'])->whereNumber('company')->middleware('can:companies.manage')->name('update');
+        Route::delete('/{company}', [CompanyController::class, 'destroy'])->whereNumber('company')->middleware('can:companies.manage')->name('destroy');
+        Route::post('/{company}/activate', [CompanyController::class, 'activate'])->whereNumber('company')->middleware('can:companies.view')->name('activate');
+    });
 
     Route::prefix('dashboard')->name('dashboard.')
         ->middleware('can:reports.view')
@@ -127,6 +180,12 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
     });
 
     Route::prefix('purchase-orders')->name('purchase-orders.')->group(function (): void {
+        Route::get('/suggestions/suppliers', [PurchaseOrderSuggestionController::class, 'suppliers'])
+            ->middleware(['can:po.view', 'can:suppliers.view'])->name('suggestions.suppliers');
+        Route::get('/suggestions/items', [PurchaseOrderSuggestionController::class, 'items'])
+            ->middleware(['can:po.view', 'can:items.view'])->name('suggestions.items');
+        Route::get('/suggestions/categories', [PurchaseOrderSuggestionController::class, 'categories'])
+            ->middleware(['can:po.view', 'can:items.manage'])->name('suggestions.categories');
         Route::get('/', [PurchaseOrderController::class, 'index'])->middleware('can:po.view')->name('index');
         Route::post('/', [PurchaseOrderController::class, 'store'])->middleware('can:po.create')->name('store');
         Route::get('/{purchaseOrder}', [PurchaseOrderController::class, 'show'])->whereNumber('purchaseOrder')->middleware('can:po.view')->name('show');

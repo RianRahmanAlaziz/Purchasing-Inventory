@@ -1,78 +1,123 @@
-﻿"use client";
+"use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { api, apiList } from "@/lib/api";
+import { useSession } from "@/features/auth/Session";
 import type { Company } from "../types";
-import { removeCompany } from "../utils/mutations";
-
-const defaultCompany: Company = { id: "company-nusantara", name: "PT Nusantara Group", address: "", phone: "", email: "", logo: "" };
-const storageKey = "stockly-companies-v1";
 
 type CompaniesContextValue = {
-  companies: Company[];
-  activeId: string;
-  ready: boolean;
-  error: string;
-  saveCompany: (company: Company) => boolean;
-  activateCompany: (id: string) => void;
-  deleteCompany: (id: string) => boolean;
-  clearError: () => void;
+  companies: Company[]; activeId: string; ready: boolean; busy: boolean; error: string; legacyCount: number;
+  saveCompany: (company: Company) => Promise<boolean>;
+  activateCompany: (id: string) => Promise<void>;
+  deleteCompany: (id: string) => Promise<boolean>;
+  importBrowserCompanies: () => Promise<void>;
+  refresh: () => Promise<void>; clearError: () => void;
 };
 const CompaniesContext = createContext<CompaniesContextValue | null>(null);
-
-function validCompany(value: unknown): value is Company {
-  if (!value || typeof value !== "object") return false;
-  const company = value as Company;
-  return [company.id, company.name, company.address, company.phone, company.email, company.logo].every(item => typeof item === "string") && company.name.trim().length > 0 && (!company.logo || /^data:image\/(png|jpeg|webp);base64,/.test(company.logo));
+function browserProfiles(): { companies: Company[]; activeId: string } {
+  const raw = localStorage.getItem("stockly-companies-v1");
+  if (!raw) return { companies: [], activeId: "" };
+  const saved = JSON.parse(raw);
+  if (!Array.isArray(saved.companies) || !saved.companies.every((company: Company) =>
+    company && [company.id, company.name, company.address, company.phone, company.email, company.logo]
+      .every(value => typeof value === "string") && company.name.trim())) {
+    throw new Error("Profil lama tidak dapat dibaca. Data browser tetap disimpan.");
+  }
+  return saved;
 }
+function normalize(company: Company): Company { return { ...company, id: String(company.id) }; }
+function nameKey(name: string) { return name.trim().replace(/\s+/g, " ").toLocaleLowerCase("id-ID"); }
 
 export function CompaniesProvider({ children }: { children: React.ReactNode }) {
-  const [companies, setCompanies] = useState<Company[]>([defaultCompany]);
-  const [activeId, setActiveId] = useState(defaultCompany.id);
+  const user = useSession();
+  const canRead = user.permissions.includes("companies.view");
+  const canManage = user.permissions.includes("companies.manage");
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [activeId, setActiveId] = useState("");
   const [ready, setReady] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [legacyCount, setLegacyCount] = useState(0);
   useEffect(() => {
-    function load() {
-      try {
-        const raw = localStorage.getItem(storageKey);
-        if (raw !== null) {
-          const saved = JSON.parse(raw);
-          if (!Array.isArray(saved.companies) || !saved.companies.every(validCompany) || new Set(saved.companies.map((company: Company) => company.id)).size !== saved.companies.length) throw new Error("Data tidak valid");
-          setCompanies(saved.companies);
-          setActiveId(saved.companies.some((company: Company) => company.id === saved.activeId) ? saved.activeId : saved.companies[0]?.id || "");
-        } else {
-          setCompanies([defaultCompany]); setActiveId(defaultCompany.id);
-        }
-        setReady(true); setError("");
-      } catch { setReady(false); setError("Penyimpanan profil PT tidak dapat dibaca. Periksa penyimpanan browser lalu muat ulang."); }
-    }
-    function onStorage(event: StorageEvent) { if (event.key === storageKey || event.key === null) load(); }
-    const timer = window.setTimeout(load, 0);
-    window.addEventListener("storage", onStorage);
-    return () => { window.clearTimeout(timer); window.removeEventListener("storage", onStorage); };
-  }, []);
-
-  function persist(nextCompanies: Company[], nextActiveId: string) {
-    if (!ready) return false;
+    if (!canRead) return;
+    const controller = new AbortController();
+    apiList<Company>("companies", controller.signal).then(rows => {
+      if (controller.signal.aborted) return;
+      const loaded = rows.map(normalize);
+      setCompanies(loaded);
+      const preferred = String(user.default_company_id ?? "");
+      setActiveId(loaded.some(company => company.id === preferred) ? preferred : loaded[0]?.id ?? "");
+      setReady(true); setError("");
+      if (canManage) {
+        try { setLegacyCount(browserProfiles().companies.filter(old => !loaded.some(company => nameKey(company.name) === nameKey(old.name))).length); }
+        catch (cause) { setError((cause as Error).message); }
+      }
+    }, cause => { if (!controller.signal.aborted) { setReady(false); setError(cause instanceof Error ? cause.message : "Profil PT gagal dimuat."); } });
+    return () => controller.abort();
+  }, [canRead, canManage, user.id, user.default_company_id]);
+  async function refresh() {
     try {
-      localStorage.setItem(storageKey, JSON.stringify({ companies: nextCompanies, activeId: nextActiveId }));
-      setCompanies(nextCompanies); setActiveId(nextActiveId); setError(""); return true;
-    } catch { setError("Profil belum tersimpan. Penyimpanan browser penuh atau tidak tersedia. Coba logo berukuran lebih kecil."); return false; }
+      const rows = (await apiList<Company>("companies")).map(normalize);
+      setCompanies(rows); setActiveId(current => rows.some(company => company.id === current) ? current : rows[0]?.id ?? "");
+      setReady(true); setError("");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Profil PT gagal dimuat."); }
   }
-
-  function saveCompany(company: Company) {
-    if (!validCompany(company)) return false;
-    const exists = companies.some(current => current.id === company.id);
-    return persist(exists ? companies.map(current => current.id === company.id ? company : current) : [...companies, company], activeId || company.id);
+  async function saveCompany(company: Company) {
+    if (!canManage || busy) return false;
+    setBusy(true); setError("");
+    try {
+      const { id, ...body } = company;
+      const existing = /^[1-9][0-9]*$/.test(id);
+      const saved = normalize((await api<Company>(existing ? "companies/" + id : "companies", { method: existing ? "PATCH" : "POST", body })).data);
+      setCompanies(current => current.some(entry => entry.id === saved.id)
+        ? current.map(entry => entry.id === saved.id ? saved : entry) : [...current, saved]);
+      setActiveId(current => current || saved.id);
+      return true;
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Profil PT gagal disimpan."); return false; }
+    finally { setBusy(false); }
   }
-
-  function deleteCompany(id: string) {
-    try { const next = removeCompany(companies, activeId, id); return persist(next.companies, next.activeId); }
-    catch (cause) { setError((cause as Error).message); return false; }
+  async function activateCompany(id: string) {
+    if (busy) return;
+    setBusy(true); setError("");
+    try { await api("companies/" + id + "/activate", { method: "POST" }); setActiveId(id); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "PT aktif gagal diubah."); }
+    finally { setBusy(false); }
   }
-
-  return <CompaniesContext value={{ companies, activeId, ready, error, saveCompany, deleteCompany, clearError: () => setError(""), activateCompany: id => { if (companies.some(company => company.id === id)) persist(companies, id); } }}>{children}</CompaniesContext>;
+  async function deleteCompany(id: string) {
+    if (!canManage || busy) return false;
+    setBusy(true); setError("");
+    try {
+      await api("companies/" + id, { method: "DELETE" });
+      const next = companies.filter(company => company.id !== id);
+      setCompanies(next); setActiveId(current => current === id ? next[0]?.id ?? "" : current);
+      return true;
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Profil PT gagal dihapus."); return false; }
+    finally { setBusy(false); }
+  }
+  async function importBrowserCompanies() {
+    if (!canManage || busy) return;
+    setBusy(true); setError("");
+    try {
+      const legacy = browserProfiles();
+      const loaded = (await apiList<Company>("companies")).map(normalize);
+      let preferred = "";
+      for (const old of legacy.companies) {
+        let saved = loaded.find(company => nameKey(company.name) === nameKey(old.name));
+        if (!saved) {
+          const { name, address, phone, email, logo } = old;
+          saved = normalize((await api<Company>("companies", { method: "POST", body: { name, address, phone, email, logo } })).data);
+          loaded.push(saved);
+        }
+        if (old.id === legacy.activeId) preferred = saved.id;
+      }
+      if (preferred) { await api("companies/" + preferred + "/activate", { method: "POST" }); setActiveId(preferred); }
+      setCompanies(loaded); setLegacyCount(0);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Impor belum selesai. Profil lama tetap disimpan; ulangi untuk melanjutkan."); }
+    finally { setBusy(false); }
+  }
+  return <CompaniesContext value={{ companies, activeId, ready, busy, error, legacyCount, saveCompany, deleteCompany,
+    clearError: () => setError(""), activateCompany, importBrowserCompanies, refresh }}>{children}</CompaniesContext>;
 }
-
 export function useCompanies() {
   const context = useContext(CompaniesContext);
   if (!context) throw new Error("useCompanies requires CompaniesProvider");

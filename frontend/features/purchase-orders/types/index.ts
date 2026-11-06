@@ -8,6 +8,12 @@ export type OrderLine = {
   unitPrice: number;
   discountPercent: number;
   taxPercent: number;
+  taxRate?: {
+    id: number;
+    label: string;
+    direction: "addition" | "withholding";
+    baseFactor: number;
+  };
 };
 export type PurchaseOrder = {
   id: string; supplier: string; initials: string; color: string; date: string;

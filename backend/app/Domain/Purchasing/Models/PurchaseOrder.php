@@ -28,11 +28,14 @@ final class PurchaseOrder extends Model
         'requires_gm_approval', 'submitted_at', 'approved_at',
         'rejected_at', 'rejection_reason', 'sent_at',
         'supplier_confirmed_at', 'cancelled_at', 'notes',
+        'company_id', 'company_snapshot', 'supplier_address_snapshot', 'discount_total', 'tax_scope',
     ];
 
     protected function casts(): array
     {
         return [
+            'company_snapshot' => 'array',
+            'discount_total' => 'decimal:2',
             'order_date' => 'date:Y-m-d',
             'expected_date' => 'date:Y-m-d',
             'subtotal' => 'decimal:2',
@@ -83,7 +86,9 @@ final class PurchaseOrder extends Model
 
     public function approvals(): HasMany
     {
-        return $this->hasMany(PurchaseOrderApproval::class)->orderBy('step_order');
+        return $this->hasMany(PurchaseOrderApproval::class)
+            ->with('decider:id,name')
+            ->orderBy('step_order');
     }
 
     public function events(): HasMany

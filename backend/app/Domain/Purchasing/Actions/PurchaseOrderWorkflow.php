@@ -44,7 +44,7 @@ final class PurchaseOrderWorkflow
             }
 
             $basis = PoMoney::cents((string) $po->approval_basis_amount);
-            $threshold = PoMoney::cents((string) config('purchasing.gm_approval_threshold', '7000000.00'));
+            $threshold = PoMoney::cents((string) config('purchasing.gm_approval_threshold', '20000000.00'));
             $needsGm = $basis > $threshold;
             $po->update([
                 'status' => 'pending_approval',
