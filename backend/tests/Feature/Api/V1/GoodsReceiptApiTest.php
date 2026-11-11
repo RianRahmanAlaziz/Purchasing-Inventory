@@ -73,7 +73,7 @@ final class GoodsReceiptApiTest extends TestCase
             'minimum_stock' => '2.000', 'is_active' => true,
         ]);
         $this->maker = User::factory()->create(['is_active' => true]);
-        $this->hr = $this->userWith(['po.approve.hr']);
+        $this->hr = $this->userWith(['po.approve.hr'])->assignRole(Role::findOrCreate('hr', 'web'));
     }
 
     private function userWith(array $permissions): User
@@ -201,7 +201,7 @@ final class GoodsReceiptApiTest extends TestCase
         $this->signIn($actor);
         $result = $this->postJson('/api/v1/goods-receipts', $this->payload($po))
             ->assertCreated();
-        $this->assertStringStartsWith('GRN-', $result->json('data.grn_number'));
+        $result->assertJsonPath('data.grn_number', sprintf('GRN-%06d', $result->json('data.id')));
         $this->assertSame($actor->id, $result->json('data.created_by'));
     }
 

@@ -161,6 +161,16 @@ Jalankan Laravel dan Next.js dari dua terminal. Browser mengakses Next.js, lalu 
 
    Buka [workspace lokal](http://localhost:3000). Bila alamat Laravel berbeda, set `LARAVEL_API_URL` di `frontend/.env.local` ke alamat server Laravel tanpa akhiran `/api/v1`. Bila Next.js berada di belakang reverse proxy, set `APP_ORIGIN` ke origin publik Next.js, misalnya `https://inventory.example.com`.
 
+### Email notifikasi PO
+
+Isi `FRONTEND_URL` di `backend/.env` dengan alamat publik Next.js agar tautan email membuka PO yang sesuai. Set `MAIL_MAILER=smtp` serta `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, dan `MAIL_FROM_ADDRESS` sesuai penyedia email. Pengaturan lokal `MAIL_MAILER=log` menulis email ke log Laravel.
+
+Jalankan worker antrean di terminal backend terpisah:
+
+```sh
+php artisan queue:work
+```
+
 ### Izin modul
 
 Laravel memeriksa izin akun untuk setiap aksi. Seeder memasang izin modul saat menginisialisasi RBAC. Untuk role yang sudah dikonfigurasi, perubahan izin dilakukan lewat API RBAC.

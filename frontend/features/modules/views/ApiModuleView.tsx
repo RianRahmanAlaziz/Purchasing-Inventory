@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "@/features/auth/Session";
+import { canAccessModule, isSuperAdmin } from "@/features/dashboard/constants/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ExportButton } from "@/components/ui/ExportButton";
@@ -12,6 +14,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { usePagination } from "@/components/ui/hooks/usePagination";
 import { api } from "@/lib/api";
 import { formatQuantity, quantityInput } from "@/lib/quantity";
+import { formatEffectiveTaxRate } from "@/lib/tax-rate";
 import { documentMoney } from "@/features/purchase-orders/utils/totals";
 import { ApiRecordEditor } from "../components/ApiRecordEditor";
 import { ApiPurchaseOrderPreview } from "@/features/purchase-orders/components/ApiPurchaseOrderPreview";
@@ -50,6 +53,7 @@ function text(row: Row, column: Column) {
     }
     case "money": return documentMoney(String(value));
     case "quantity": return formatQuantity(value);
+    case "effective-tax-rate": return formatEffectiveTaxRate(value, get(row, "taxable_base_factor"));
     case "status": return statusText(value, column.key);
     default: return String(value);
   }
@@ -74,8 +78,9 @@ function Details({ row: summary, config, close, edit, act, preview }: {
   const row = detail.data ?? summary;
   const operations = (config.operations?.(row, user) ?? [])
     .filter(operation => !operation.permission || user.permissions.includes(operation.permission));
-  const canEdit = config.mutations?.edit && user.permissions.includes(config.mutations.edit) && config.edit?.(row);
-  const canRemove = config.mutations?.remove && user.permissions.includes(config.mutations.remove) && config.remove?.(row);
+  const canManage = !config.adminEditAndRemoveOnly || isSuperAdmin(user);
+  const canEdit = canManage && config.mutations?.edit && user.permissions.includes(config.mutations.edit) && config.edit?.(row);
+  const canRemove = canManage && config.mutations?.remove && user.permissions.includes(config.mutations.remove) && config.remove?.(row);
   return <Modal title={"Detail " + config.title} className="order-editor-modal" onClose={close}>
     <div className="po-form-body">
       {detail.loading && <p className="form-hint" role="status">Memuat detail...</p>}
@@ -96,10 +101,10 @@ function Details({ row: summary, config, close, edit, act, preview }: {
     </div>
     <div className="modal-actions api-actions">
       {config.endpoint === "documents" && Boolean(row.file_name) && <a className="button secondary" href={"/api/documents/" + row.id + "/download"}>Unduh berkas</a>}
-      {config.print && <Button variant="secondary" onClick={() => preview(row)}>Surat PO</Button>}
+      {config.print && Boolean(row.po_number) && <Button variant="secondary" onClick={() => preview(row)}>Surat PO</Button>}
       {canEdit && <Button variant="secondary" onClick={() => edit(row)}>Edit</Button>}
       {canRemove && <Button variant="secondary" onClick={() => act({ label: "Hapus", method: "DELETE" }, row)}>Hapus</Button>}
-      {operations.map(operation => <Button key={operation.suffix} variant="secondary" onClick={() => act(operation, row)}>{operation.label}</Button>)}
+      {operations.map(operation => <Button key={operation.suffix} variant={operation.variant ?? "secondary"} onClick={() => act(operation, row)}>{operation.label}</Button>)}
     </div>
   </Modal>;
 }
@@ -144,7 +149,7 @@ function OperationDialog({ row, config, operation, close, done }: {
       {(operation.reason || operation.adjustment) && <label>Alasan<textarea required minLength={5} maxLength={operation.adjustment ? 1000 : 2000}
         value={reason} onChange={event => setReason(event.target.value)}/></label>}
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="modal-actions"><Button type="button" variant="secondary" disabled={busy} onClick={close}>Kembali</Button><Button type="submit" disabled={busy}>{busy ? "Memproses..." : operation.label}</Button></div>
+      <div className="modal-actions"><Button type="button" variant="secondary" disabled={busy} onClick={close}>Kembali</Button><Button type="submit" variant={operation.variant} disabled={busy}>{busy ? "Memproses..." : operation.label}</Button></div>
     </form>
   </Modal>;
 }
@@ -166,10 +171,16 @@ export function ApiModuleView({ slug }: { slug: string }) {
   const [statusState, setStatus] = useState({ filter, value: filter });
   const query = queryState.search === search ? queryState.value : search;
   const status = statusState.filter === filter ? statusState.value : filter;
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const linkedPo = params.get("po") ?? "";
+  const linkedId = (slug === "purchase-orders" || slug === "approvals") && /^[1-9]\d{0,14}$/.test(linkedPo)
+    ? Number(linkedPo) : null;
+  const [manualSelection, setSelection] = useState<Selection | null>(null);
+  const selection: Selection | null = manualSelection ?? (linkedId ? { mode: "detail", row: { id: linkedId } } : null);
   const [notice, setNotice] = useState("");
-  const { data, loading, error } = useApiData<Row[]>(config.endpoint, revision, true);
-  const rows = config.filter ? (data ?? []).filter(config.filter) : data ?? [];
+  const [importingPpn, setImportingPpn] = useState(false);
+  const [importError, setImportError] = useState("");
+  const { data, loading, error } = useApiData<Row[]>(config.listEndpoint ?? config.endpoint, revision, true);
+  const rows = data ?? [];
   const statusKey = config.status;
   const choices = statusKey ? [...new Set(rows.map(row => String(get(row, statusKey))).concat(status ? [status] : []))] : [];
   const filtered = rows.filter(row =>
@@ -178,10 +189,38 @@ export function ApiModuleView({ slug }: { slug: string }) {
   const pagination = usePagination(filtered, JSON.stringify([slug, query, status]));
 
   function refresh() { setRevision(current => current + 1); }
+  function closeSelection() {
+    setSelection(null);
+    if (linkedId) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("po");
+      window.history.replaceState(null, "", url);
+    }
+  }
   function saved() {
     setNotice("Perubahan berhasil disimpan.");
-    setSelection(null);
+    closeSelection();
     refresh();
+  }
+
+  async function importPpn() {
+    if (importingPpn) return;
+    setImportingPpn(true);
+    setImportError("");
+    setNotice("");
+    try {
+      const { data } = await api<{ imported: number; skipped: number }>("tax-rates/import/refnusa", { method: "POST" });
+      const added = data.imported > 0
+        ? `${data.imported} tarif PPN disimpan sebagai nonaktif. Tinjau lalu aktifkan jenis pajak dan tarifnya.`
+        : "";
+      const skipped = data.skipped > 0 ? `${data.skipped} tarif dengan tanggal mulai yang sama sudah ada.` : "";
+      setNotice([added, skipped].filter(Boolean).join(" "));
+      refresh();
+    } catch (cause) {
+      setImportError(cause instanceof Error ? cause.message : "Impor tarif PPN gagal.");
+    } finally {
+      setImportingPpn(false);
+    }
   }
 
   return <>
@@ -189,16 +228,21 @@ export function ApiModuleView({ slug }: { slug: string }) {
       <div className="eyebrow"><span className="status-dot"/> WORKSPACE / OPERASIONAL</div>
       <h1>{config.title}</h1><p>{config.description}</p>
     </div><div className="heading-actions">
+      {slug === "items" && canAccessModule(user, "categories") && <Link className="button secondary" href="/categories">Kelola Kategori Produk</Link>}
       <ExportButton disabled={loading || !!error} filename={slug + ".csv"} columns={config.columns.map(column => column.label)}
         records={filtered.map(row => ({ date: datePart(get(row, config.date)), cells: config.columns.map(column => {
           const value = get(row, column.key);
           return typeof value === "string" && column.format === "money" ? value : text(row, column);
         }) }))}/>
+      {slug === "tax-rates" && canCreate && <Button variant="secondary" disabled={importingPpn} onClick={() => void importPpn()}>
+        {importingPpn ? "Mengimpor PPN..." : "Impor PPN Nonmewah"}
+      </Button>}
       {canCreate && <Button disabled={slug !== "purchase-orders" && (loading || !!error)} onClick={() => { setNotice(""); setSelection({ mode: "create" }); }}>
         <Icon name="plus" size={17}/>{slug === "purchase-orders" ? "Buat Purchase Order" : "Tambah " + config.title}
       </Button>}
     </div></div>
     {notice && <p className="form-hint" role="status">{notice}</p>}
+    {importError && <p className="form-error" role="alert">{importError}</p>}
     <section className="panel module-panel">
       <div className="panel-header"><div><h2>Daftar {config.title} <span className="count-pill">{filtered.length}</span></h2></div>
         <Button variant="secondary" disabled={loading} onClick={refresh}>Muat ulang</Button></div>
@@ -225,7 +269,7 @@ export function ApiModuleView({ slug }: { slug: string }) {
       ? <CreateOrderModal row={selection.row} onClose={() => setSelection({ mode: "detail", row: selection.row })} onSaved={saved}/>
       : <ApiRecordEditor config={config} row={selection.row}
         close={() => setSelection({ mode: "detail", row: selection.row })} saved={saved}/>)}
-    {selection?.mode === "detail" && <Details row={selection.row} config={config} close={() => setSelection(null)}
+    {selection?.mode === "detail" && <Details row={selection.row} config={config} close={closeSelection}
       edit={row => setSelection({ mode: "edit", row })}
       act={(operation, row) => setSelection({ mode: "operation", row, operation })}
       preview={row => setSelection({ mode: "preview", row })}/>}

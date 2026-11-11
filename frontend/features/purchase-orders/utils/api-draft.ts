@@ -12,6 +12,51 @@ export type DraftLine = {
   itemName: string; categoryId: string; stockUnit?: string;
   discountPercent: string; taxRateId: string; taxOption?: TaxOption; notes: string;
 };
+
+export type PoFormInput = {
+  companyChoice: string | null;
+  supplierId: string;
+  supplierName: string;
+  supplierAddress: string;
+  employeeName: string;
+  departmentName: string;
+  date: string;
+  expectedDate: string;
+  notes: string;
+  lines: DraftLine[];
+  orderRateIds: string[];
+};
+
+export function readPoFormInput(key: string, version: number): PoFormInput | undefined {
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(key) ?? "null") as { version: number; input: PoFormInput } | null;
+    if (stored?.version !== version || !stored.input) return;
+    const input = stored.input;
+    if (input.companyChoice !== null && typeof input.companyChoice !== "string") return;
+    if (![input.supplierId, input.supplierName, input.supplierAddress, input.employeeName, input.departmentName,
+      input.date, input.expectedDate, input.notes].every(value => typeof value === "string")) return;
+    if (!Array.isArray(input.orderRateIds) || !input.orderRateIds.every(value => typeof value === "string")) return;
+    if (!Array.isArray(input.lines) || input.lines.length < 1 || input.lines.length > 100) return;
+    if (!input.lines.every(line => line && [
+      line.id, line.itemId, line.itemName, line.categoryId, line.description, line.unit, line.quantity,
+      line.unitPrice, line.discountPercent, line.taxRateId, line.notes,
+    ].every(value => typeof value === "string") && (
+      !line.taxOption || ["addition", "withholding"].includes(line.taxOption.tax_type?.direction)
+    ))) return;
+    return input;
+  } catch {
+    return undefined;
+  }
+}
+
+export function keepPoFormInput(key: string, version: number, input: PoFormInput) {
+  try { sessionStorage.setItem(key, JSON.stringify({ version, input })); } catch { /* Storage may be unavailable. */ }
+}
+
+export function clearPoFormInput(key: string) {
+  try { sessionStorage.removeItem(key); } catch { /* Storage may be unavailable. */ }
+}
+
 export function emptyLine(): DraftLine {
   return { id: crypto.randomUUID(), itemId: "", itemName: "", categoryId: "", description: "", unit: "pcs", quantity: "1",
     unitPrice: "", discountPercent: "0", taxRateId: "", notes: "" };
@@ -56,15 +101,17 @@ export function readBrowserDraft(key: string): { draft?: PurchaseOrder; error: s
     return { draft, error: "" };
   } catch { return { error: "Draft lama belum dapat dibaca. Data browser tetap disimpan." }; }
 }
-type PayloadInput = {
-  companyId: string; supplierId: string; supplierName?: string; employeeId: string; departmentId: string; supplierAddress: string;
-  date: string; expectedDate: string; notes: string; lines: DraftLine[]; taxScope: "line" | "order"; orderRateIds: string[];
+type PayloadInput = Omit<PoFormInput, "companyChoice" | "supplierName"> & {
+  companyId: string;
+  supplierName?: string;
+  taxScope: "line" | "order";
 };
 export function poPayload(input: PayloadInput) {
   const id = /^[1-9][0-9]*$/;
-  if (![input.companyId, input.employeeId, input.departmentId].every(value => id.test(value))) {
-    throw new Error("Pilih PT serta karyawan dengan departemen yang aktif.");
-  }
+  if (!id.test(input.companyId)) throw new Error("Pilih PT penerbit.");
+  const employeeName = input.employeeName.trim();
+  const departmentName = input.departmentName.trim();
+  if (!employeeName || !departmentName) throw new Error("Isi nama karyawan dan departemen pemohon.");
   if (input.supplierId ? !id.test(input.supplierId) : !input.supplierName?.trim()) throw new Error("Isi nama supplier.");
   if (!input.lines.length || input.lines.length > 100) throw new Error("Isi 1 hingga 100 barang pada PO.");
   if (input.taxScope === "order" && input.orderRateIds.some(value => !id.test(value))) throw new Error("Pilih ulang pajak dari database.");
@@ -84,7 +131,7 @@ export function poPayload(input: PayloadInput) {
   });
   return { company_id: Number(input.companyId), supplier_id: input.supplierId ? Number(input.supplierId) : null,
     ...(input.supplierName?.trim() ? { supplier_name: input.supplierName.trim() } : {}), supplier_address: input.supplierAddress.trim(),
-    requested_for_employee_id: Number(input.employeeId), requested_for_department_id: Number(input.departmentId),
+    requested_for_employee_name: employeeName, requested_for_department_name: departmentName,
     order_date: input.date, expected_date: input.expectedDate || null, notes: input.notes.trim() || null,
     tax_scope: input.taxScope, tax_rate_ids: input.taxScope === "order" ? input.orderRateIds.map(Number) : [], items };
 }

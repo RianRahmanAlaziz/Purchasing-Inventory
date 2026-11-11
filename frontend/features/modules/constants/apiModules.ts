@@ -1,5 +1,7 @@
 import { workspaceToday } from "@/lib/export-period";
 import { ITEM_UNITS } from "@/lib/item-units";
+import { canCreateStockItem } from "@/features/items/utils/access";
+import { formatEffectiveTaxRate } from "@/lib/tax-rate";
 import { get, records, type ApiModule, type Column, type Field, type Operation, type OptionSource, type Row } from "../api-types";
 
 const status: Column = { key: "status", label: "Status", format: "status" };
@@ -28,12 +30,11 @@ function options(path: string, idLabel: string, nameLabel = "name"): OptionSourc
   };
 }
 
-const employees = options("employees?is_active=1", "employee_number");
+const distributionRecipients = options("distributions/recipients", "employee_number");
 const departments = options("departments?is_active=1", "code");
 const suppliers = options("suppliers?is_active=1", "code");
 const items = options("items?is_active=1", "sku");
-const categories = options("categories?is_active=1", "code");
-const taxPercent = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 4 });
+const categories = options("items/category-options", "code");
 
 const itemField: Field = { key: "item_id", label: "Barang", type: "id", required: true, source: items };
 const quantity: Field & Column = { key: "quantity", label: "Jumlah", type: "quantity", format: "quantity", required: true, min: 0.001 };
@@ -41,6 +42,8 @@ const unitPrice: Field = { key: "unit_price", label: "Harga satuan", type: "mone
 const lineColumns: Column[] = [
   { key: "sku", label: "SKU" }, { key: "name", label: "Barang" }, { key: "unit", label: "Satuan" },
 ];
+
+const requester: Column = { key: "requested_for_employee_name", label: "Karyawan pemohon" };
 
 const purchaseOrders: ApiModule = {
   endpoint: "purchase-orders",
@@ -54,6 +57,7 @@ const purchaseOrders: ApiModule = {
     { key: "order_date", label: "Tanggal", format: "date" }, { key: "total_amount", label: "Total", format: "money" }, status,
   ],
   details: [
+    requester, { key: "requested_for_department_name", label: "Departemen pemohon" },
     { key: "company_snapshot.name", label: "PT penerbit" }, { key: "supplier_address_snapshot", label: "Alamat supplier" },
     { key: "expected_date", label: "Perkiraan datang", format: "date" }, notes,
     { key: "subtotal", label: "Subtotal", format: "money" },
@@ -70,8 +74,8 @@ const purchaseOrders: ApiModule = {
   ],
   fields: [
     { key: "supplier_id", label: "Supplier", type: "id", required: true, source: suppliers },
-    { key: "requested_for_employee_id", label: "Karyawan pemohon", type: "id", required: true, source: employees },
-    { key: "requested_for_department_id", label: "Departemen pemohon", type: "id", required: true, source: departments },
+    { key: "requested_for_employee_name", label: "Karyawan pemohon", required: true, maxLength: 200 },
+    { key: "requested_for_department_name", label: "Departemen pemohon", required: true, maxLength: 200 },
     { key: "order_date", label: "Tanggal pemesanan", type: "date", required: true, initial: workspaceToday },
     { key: "expected_date", label: "Perkiraan datang", type: "date" },
     { key: "tax_rate_ids", label: "Pajak yang berlaku", type: "multiple",
@@ -80,7 +84,7 @@ const purchaseOrders: ApiModule = {
         path: values => values.order_date ? "taxes/options?date=" + encodeURIComponent(String(values.order_date)) : null,
         options: rows => rows.map(row => ({
           value: String(row.id),
-          label: row.label + " · " + taxPercent.format(Number(row.rate_percent)) + "%",
+          label: row.label + " · " + formatEffectiveTaxRate(row.rate_percent, row.taxable_base_factor),
         })),
       },
     },
@@ -113,17 +117,14 @@ export const apiModules: Record<string, ApiModule> = {
     edit: always, remove: always,
   },
   "tax-rates": {
-    endpoint: "tax-rates", title: "Tarif Pajak", description: "Kelola tarif dan masa berlaku pajak yang dipilih pada PO.",
-    mutations: manage("taxes.manage"), date: "effective_from", status: "is_active",
+    endpoint: "tax-rates", title: "Tarif Pajak", description: "Kelola tarif pajak untuk purchase order.",
+    mutations: manage("taxes.manage"), date: "created_at", status: "is_active",
     columns: [{ key: "label", label: "Tarif" }, { key: "tax_type.name", label: "Jenis pajak" },
-      { key: "rate_percent", label: "Persentase (%)" }, { key: "taxable_base_factor", label: "Faktor dasar" },
-      { key: "effective_from", label: "Mulai berlaku", format: "date" }, { key: "effective_until", label: "Berlaku hingga", format: "date" }, active],
+      { key: "rate_percent", label: "Tarif efektif", format: "effective-tax-rate" }, active],
     fields: [{ key: "tax_type_id", label: "Jenis pajak", type: "id", required: true, createOnly: true, source: options("tax-types?is_active=1", "code") },
       { key: "label", label: "Nama tarif", required: true, maxLength: 160 },
-      { key: "rate_percent", label: "Persentase (%)", required: true, initial: "0" },
-      { key: "taxable_base_factor", label: "Faktor dasar pajak", required: true, initial: "1" },
-      { key: "effective_from", label: "Mulai berlaku", type: "date", required: true, initial: workspaceToday },
-      { key: "effective_until", label: "Berlaku hingga", type: "date" }, activeField],
+      { key: "rate_percent", label: "Tarif nominal (%)", required: true, initial: "0" },
+      { key: "taxable_base_factor", label: "Faktor dasar pajak", required: true, initial: "1" }, activeField],
     edit: always, remove: always,
   },
   invoices: {
@@ -193,7 +194,7 @@ export const apiModules: Record<string, ApiModule> = {
     edit: always, remove: always,
   },
   categories: {
-    endpoint: "categories", title: "Kategori", description: "Kelola kategori untuk master barang.",
+    endpoint: "categories", title: "Kategori Produk", description: "Kelola kategori yang dapat dipilih saat menambah atau mengedit barang.",
     mutations: manage("categories.manage"),
     columns: [code, name, { key: "description", label: "Deskripsi" }, active], date: "created_at", status: "is_active",
     fields: [codeField, nameField, { key: "description", label: "Deskripsi", type: "textarea", maxLength: 5000 }, activeField],
@@ -206,27 +207,27 @@ export const apiModules: Record<string, ApiModule> = {
     fields: [codeField, nameField, activeField], edit: always, remove: always,
   },
   employees: {
-    endpoint: "employees", title: "Karyawan", description: "Kelola karyawan, departemen, dan tautan ke akun Laravel yang sudah ada.",
+    endpoint: "employees", title: "Karyawan", description: "Kelola data karyawan dan departemennya.",
     mutations: manage("employees.manage"),
     columns: [{ key: "employee_number", label: "Nomor karyawan" }, name, { key: "department.name", label: "Departemen" }, email, active],
-    details: [{ key: "user.email", label: "Akun Laravel" }], date: "created_at", status: "is_active",
+    date: "created_at", status: "is_active",
     fields: [
       { key: "employee_number", label: "Nomor karyawan", required: true, maxLength: 60 }, { ...nameField, maxLength: 160 },
-      { key: "department_id", from: "department.id", label: "Departemen", type: "id", source: departments }, emailField,
-      { key: "user_id", from: "user.id", label: "ID akun Laravel (opsional)", type: "id" }, activeField,
+      { key: "department_id", from: "department.id", label: "Departemen", type: "id", required: true, source: departments }, emailField,
+      activeField,
     ],
     edit: always, remove: always,
   },
   items: {
     endpoint: "items", title: "Stok Barang", description: "Kelola master barang, pantau saldo, dan catat penyesuaian stok.",
-    mutations: manage("items.manage"),
-    columns: [{ key: "sku", label: "SKU" }, name, { key: "category.name", label: "Kategori" },
+    mutations: { ...manage("items.manage"), create: canCreateStockItem }, adminEditAndRemoveOnly: true,
+    columns: [{ key: "sku", label: "SKU" }, name, { key: "category.name", label: "Kategori produk" },
       { key: "stock_quantity", label: "Stok", format: "quantity" }, { key: "minimum_stock", label: "Stok minimum", format: "quantity" }, { key: "unit", label: "Satuan" },
       { key: "last_purchase_price", label: "Harga terakhir", format: "money" }, { key: "is_low_stock", label: "Ketersediaan", format: "status" }, active],
     date: "created_at", status: "is_low_stock",
     details: [{ key: "id", label: "ID barang" }],
     fields: [{ key: "sku", label: "SKU", required: true }, { ...nameField, maxLength: 200 },
-      { key: "category_id", from: "category.id", label: "Kategori", type: "id", required: true, source: categories },
+      { key: "category_id", from: "category.id", label: "Kategori produk", type: "id", required: true, source: categories },
       { key: "unit", label: "Satuan", required: true, initial: "pcs", choices: ITEM_UNITS.map(unit => ({ value: unit, label: unit })) },
       { key: "minimum_stock", label: "Stok minimum", type: "quantity", required: true, initial: "0" }, activeField],
     edit: always, remove: always,
@@ -235,21 +236,24 @@ export const apiModules: Record<string, ApiModule> = {
   "purchase-orders": purchaseOrders,
   approvals: {
     ...purchaseOrders,
+    listEndpoint: "purchase-orders/approvals",
     title: "Persetujuan PO",
     description: "Periksa dan putuskan PO pada tahap HR atau GM sesuai hak akses.",
-    filter: row => records(row, "approvals").length > 0,
+    columns: [...purchaseOrders.columns, requester],
+    details: purchaseOrders.details?.filter(column => column.key !== requester.key),
     fields: undefined, edit: undefined, remove: undefined, mutations: undefined,
     operations: (row, user) => {
       if (row.status !== "pending_approval" || row.created_by === user.id) return [];
       const approvals = records(row, "approvals");
       const next = approvals.find(step => step.status === "pending");
       if (!next || !["hr", "general_manager"].includes(String(next.step))) return [];
+      if (!user.roles.includes("super_admin") && !user.roles.includes(String(next.step))) return [];
       const step = next.step === "general_manager" ? "gm" : "hr";
       if (step === "gm" && approvals.some(approval => approval.step === "hr" && approval.decided_by === user.id)) return [];
       const prefix = "approvals/" + step;
       return [
-        { label: "Setujui " + step.toUpperCase(), suffix: prefix + "/approve", permission: "po.approve." + step },
-        { label: "Tolak " + step.toUpperCase(), suffix: prefix + "/reject", reason: true, permission: "po.reject." + step },
+        { label: "Setuju", variant: "success", suffix: prefix + "/approve", permission: "po.approve." + step },
+        { label: "Tolak", variant: "danger", suffix: prefix + "/reject", reason: true, permission: "po.reject." + step },
       ];
     },
   },
@@ -302,7 +306,7 @@ export const apiModules: Record<string, ApiModule> = {
     date: "requested_at", status: "status",
     details: [{ key: "purpose", label: "Keperluan" }, { key: "rejection_reason", label: "Alasan penolakan" }, { key: "received_at", label: "Diterima", format: "datetime" }],
     fields: [
-      { key: "employee_id", label: "Penerima (kosongkan untuk diri sendiri)", type: "id", source: employees, omitEmpty: true },
+      { key: "employee_id", label: "Penerima (kosongkan untuk diri sendiri)", type: "id", source: distributionRecipients, omitEmpty: true },
       { key: "purpose", label: "Keperluan", type: "textarea", required: true, maxLength: 5000 },
     ],
     lines: { limit: 50, fields: [itemField, quantity, lineNotes] },

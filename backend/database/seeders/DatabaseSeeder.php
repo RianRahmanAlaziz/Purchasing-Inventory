@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             RolePermissionSeeder::class,
             SuperAdminUserSeeder::class,
+            PpnIndonesia2026Seeder::class,
         ]);
     }
 }

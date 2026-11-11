@@ -42,7 +42,7 @@ final class ConnectedModulesTest extends TestCase
         foreach ($permissions as $name) {
             Permission::findOrCreate($name, 'web');
         }
-        $role = Role::findOrCreate('connected-test', 'web');
+        $role = Role::findOrCreate('super_admin', 'web');
         $role->syncPermissions($permissions);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         $this->admin = User::factory()->create(['is_active' => true])->assignRole($role);
@@ -210,8 +210,10 @@ final class ConnectedModulesTest extends TestCase
             $this->postJson('/api/v1/'.$path, [])->assertForbidden();
         }
         $role->givePermissionTo('companies.view');
+        $role->givePermissionTo(Permission::findOrCreate('po.view', 'web'));
         app(PermissionRegistrar::class)->forgetCachedPermissions();
-        $this->getJson('/api/v1/companies')->assertOk();
+        $this->getJson('/api/v1/companies')->assertForbidden();
+        $this->getJson('/api/v1/purchase-orders/suggestions/companies')->assertOk();
         $this->postJson('/api/v1/companies', ['name' => 'Tidak boleh'])->assertForbidden();
     }
 }

@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 
 final class PurchaseOrderWorkflow
 {
+    public function __construct(private readonly NotifyPurchaseOrderApproval $notifications) {}
+
     public function submit(PurchaseOrder $po, User $actor): PurchaseOrder
     {
         return DB::transaction(function () use ($po, $actor): PurchaseOrder {
@@ -23,14 +25,14 @@ final class PurchaseOrderWorkflow
             }
             $this->requireStatus($po, 'draft');
 
-            if (
-                ! $po->supplier()->where('is_active', true)->exists()
-                || ! $po->employee()->where('is_active', true)->exists()
-                || ! $po->department()->where('is_active', true)->exists()
-            ) {
+            $employee = $po->employee;
+            $department = $po->department;
+            if (! $po->supplier()->where('is_active', true)->exists()
+                || ($po->requested_for_employee_id !== null && ! $employee?->is_active)
+                || ($po->requested_for_department_id !== null && ! $department?->is_active)) {
                 throw new PurchaseOrderConflict('Supplier, karyawan, atau departemen tidak aktif.');
             }
-            if ((int) $po->employee->department_id !== (int) $po->requested_for_department_id) {
+            if ($employee !== null && $department !== null && (int) $employee->department_id !== (int) $department->id) {
                 throw new PurchaseOrderConflict('Karyawan sudah berpindah departemen. Perbarui Draft terlebih dahulu.');
             }
             if (! $po->items()->exists()) {
@@ -44,7 +46,7 @@ final class PurchaseOrderWorkflow
             }
 
             $basis = PoMoney::cents((string) $po->approval_basis_amount);
-            $threshold = PoMoney::cents((string) config('purchasing.gm_approval_threshold', '20000000.00'));
+            $threshold = PoMoney::cents((string) config('purchasing.gm_approval_threshold', '10000000.00'));
             $needsGm = $basis > $threshold;
             $po->update([
                 'status' => 'pending_approval',
@@ -66,16 +68,28 @@ final class PurchaseOrderWorkflow
                 ]);
             }
             $this->event($po, $actor, 'submitted', 'draft', 'pending_approval');
+            $this->notifications->request($po, 'hr');
 
             return $this->load($po);
         }, attempts: 3);
+    }
+
+    public static function canDecide(User $actor, string $step, string $decision): bool
+    {
+        $role = match ($step) {
+            'hr' => 'hr',
+            'gm' => 'general_manager',
+            default => null,
+        };
+
+        return $role !== null && $actor->hasAnyRole(['super_admin', $role]) && $actor->can("po.{$decision}.{$step}");
     }
 
     public function approve(PurchaseOrder $po, User $actor, string $step): PurchaseOrder
     {
         return DB::transaction(function () use ($po, $actor, $step): PurchaseOrder {
             $po = $this->locked($po);
-            $actor->can('po.approve.'.$step) || throw new AuthorizationException('Anda tidak memiliki izin menyetujui langkah ini.');
+            self::canDecide($actor, $step, 'approve') || throw new AuthorizationException('Anda tidak memiliki izin menyetujui langkah ini.');
             $approval = $this->step($po, $step);
             $this->makerChecker($po, $actor);
 
@@ -100,7 +114,10 @@ final class PurchaseOrderWorkflow
                 // Index unik orders.purchase_order_id menjadi pelindung kedua.
                 $po->order()->firstOrCreate([], ['status' => 'pending']);
                 $this->event($po, $actor, 'fully_approved', 'pending_approval', 'approved');
+            } else {
+                $this->notifications->request($po, 'gm', (int) $actor->id);
             }
+            $this->notifications->approved($po);
 
             return $this->load($po);
         }, attempts: 3);
@@ -110,7 +127,7 @@ final class PurchaseOrderWorkflow
     {
         return DB::transaction(function () use ($po, $actor, $step, $reason): PurchaseOrder {
             $po = $this->locked($po);
-            $actor->can('po.reject.'.$step) || throw new AuthorizationException('Anda tidak memiliki izin menolak langkah ini.');
+            self::canDecide($actor, $step, 'reject') || throw new AuthorizationException('Anda tidak memiliki izin menolak langkah ini.');
             $approval = $this->step($po, $step);
             $this->makerChecker($po, $actor);
             $this->requireStatus($po, 'pending_approval');
@@ -126,6 +143,7 @@ final class PurchaseOrderWorkflow
             ]);
             $po->update(['status' => 'rejected', 'rejected_at' => now(), 'rejection_reason' => $reason]);
             $this->event($po, $actor, 'rejected_'.$step, 'pending_approval', 'rejected', $reason);
+            $this->notifications->rejected($po, $step, $reason);
 
             return $this->load($po);
         }, attempts: 3);

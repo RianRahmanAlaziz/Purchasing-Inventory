@@ -17,5 +17,13 @@ async function Workspace({ children }: { children: React.ReactNode }) {
 }
 
 export default function CmsLayout({ children }: { children: React.ReactNode }) {
-  return <Suspense fallback={<p className="loading-state">Memeriksa sesi...</p>}><Workspace>{children}</Workspace></Suspense>;
+  return (
+    <Suspense fallback={
+      <main className="workspace-loading">
+        <p className="loading-state" role="status">Memeriksa sesi…</p>
+      </main>
+    }>
+      <Workspace>{children}</Workspace>
+    </Suspense>
+  );
 }

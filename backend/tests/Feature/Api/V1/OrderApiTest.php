@@ -51,7 +51,7 @@ final class OrderApiTest extends TestCase
         $this->assertSame('testing', app()->environment());
         $this->assertSame('purchasing_test', DB::selectOne('SELECT DATABASE() AS name')->name);
 
-        foreach (['orders.view', 'po.approve.hr'] as $name) {
+        foreach (['orders.view', 'po.approve.hr', 'po.approve.gm', 'reports.view'] as $name) {
             Permission::findOrCreate($name, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -77,7 +77,7 @@ final class OrderApiTest extends TestCase
         ]);
 
         $this->maker = User::factory()->create(['is_active' => true]);
-        $this->hr = $this->roleUser(['po.approve.hr']);
+        $this->hr = $this->roleUser(['po.approve.hr'])->assignRole(Role::findOrCreate('hr', 'web'));
     }
 
     private function roleUser(array $permissions): User
@@ -95,7 +95,7 @@ final class OrderApiTest extends TestCase
         Sanctum::actingAs($user, ['*']);
     }
 
-    private function approvedOrder(?int $supplierId = null): Order
+    private function approvedOrder(?int $supplierId = null, string $unitPrice = '50000.00', ?User $gm = null): Order
     {
         $po = app(SaveDraftPurchaseOrder::class)->create([
             'supplier_id' => $supplierId ?? $this->supplier->id,
@@ -106,7 +106,7 @@ final class OrderApiTest extends TestCase
             'items' => [[
                 'item_id' => $this->item->id,
                 'quantity' => '10.000',
-                'unit_price' => '50000.00',
+                'unit_price' => $unitPrice,
             ]],
             'tax_rate_ids' => [],
         ], (int) $this->maker->id);
@@ -114,6 +114,9 @@ final class OrderApiTest extends TestCase
         $workflow = app(PurchaseOrderWorkflow::class);
         $workflow->submit($po, $this->maker);
         $workflow->approve($po, $this->hr, 'hr');
+        if ($gm !== null) {
+            $workflow->approve($po, $gm, 'gm');
+        }
 
         return Order::query()->where('purchase_order_id', $po->id)->firstOrFail();
     }
@@ -187,6 +190,31 @@ final class OrderApiTest extends TestCase
             ->assertJsonPath('data.0.status', 'pending');
     }
 
+    public function test_gm_sees_only_orders_for_purchase_orders_that_required_gm_approval(): void
+    {
+        $gm = $this->roleUser(['orders.view', 'po.approve.gm', 'reports.view'])
+            ->assignRole(Role::findOrCreate('general_manager', 'web'));
+        $gmOrder = $this->approvedOrder(unitPrice: '1000000.01', gm: $gm);
+        $hrOrder = $this->approvedOrder(unitPrice: '1000000.00');
+
+        $this->signIn($gm);
+        $this->getJson('/api/v1/orders?per_page=1')->assertOk()
+            ->assertJsonPath('data.0.id', $gmOrder->id)
+            ->assertJsonPath('meta.pagination.total', 1);
+        $this->getJson('/api/v1/orders/summary')->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson('/api/v1/dashboard/overview')->assertOk()->assertJsonPath('data.sections.orders.total', 1);
+        $this->getJson("/api/v1/orders/{$gmOrder->id}")->assertOk();
+        $this->getJson("/api/v1/orders/{$gmOrder->id}/receipts")->assertOk();
+        $this->getJson("/api/v1/orders/{$hrOrder->id}")->assertNotFound();
+        $this->getJson("/api/v1/orders/{$hrOrder->id}/receipts")->assertNotFound();
+
+        foreach (['hr', 'staff_hr', 'super_admin'] as $name) {
+            $this->signIn($this->roleUser(['orders.view'])->assignRole(Role::findOrCreate($name, 'web')));
+            $this->getJson('/api/v1/orders')->assertOk()->assertJsonPath('meta.pagination.total', 2);
+            $this->getJson("/api/v1/orders/{$hrOrder->id}")->assertOk();
+        }
+    }
+
     public function test_approved_po_creates_exactly_one_pending_order(): void
     {
         $order = $this->approvedOrder();
@@ -227,7 +255,8 @@ final class OrderApiTest extends TestCase
 
     public function test_summary_counts_order_statuses(): void
     {
-        $this->approvedOrder();
+        $first = $this->approvedOrder();
+        $this->send($first);
         $second = $this->approvedOrder();
         $this->send($second, supplierConfirm: true);
         $this->signIn($this->roleUser(['orders.view']));

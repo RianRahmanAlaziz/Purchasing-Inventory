@@ -43,7 +43,7 @@ final class CategoryApiTest extends TestCase
 
     private function actingWith(array $permissions): void
     {
-        $role = Role::findOrCreate('category_feature_tester', 'web');
+        $role = Role::findOrCreate('super_admin', 'web');
         $role->syncPermissions($permissions);
 
         $user = User::factory()->create(['is_active' => true]);

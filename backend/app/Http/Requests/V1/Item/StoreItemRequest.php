@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\V1\Item;
 
+use App\Domain\Item\Policies\ItemPolicy;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -31,7 +32,7 @@ final class StoreItemRequest extends FormRequest
 
     public function authorize(): bool
     {
-        return $this->user()?->can('items.manage') ?? false;
+        return ItemPolicy::canCreate($this->user());
     }
 
     public function rules(): array

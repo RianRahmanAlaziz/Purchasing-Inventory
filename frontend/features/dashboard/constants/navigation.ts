@@ -1,12 +1,12 @@
 import type { ApiUser } from "@/lib/api";
 
-type NavigationItem = { slug: string; name: string; icon: string; permission?: string };
+type NavigationItem = { slug: string; name: string; icon: string; permission?: string; roles?: string[] };
 
-export const navigation: { title: string; items: NavigationItem[] }[] = [
+export const navigation: { title: string; items: NavigationItem[]; masterData?: boolean }[] = [
   { title: "UTAMA", items: [{ slug: "dashboard", name: "Dashboard", icon: "grid", permission: "reports.view" }] },
   { title: "PURCHASING", items: [
     { slug: "purchase-orders", name: "Purchase Order", icon: "cart", permission: "po.view" },
-    { slug: "approvals", name: "Persetujuan PO", icon: "file", permission: "po.view" },
+    { slug: "approvals", name: "Persetujuan PO", icon: "file", permission: "po.view", roles: ["hr", "general_manager", "super_admin"] },
     { slug: "orders", name: "Order Management", icon: "file", permission: "orders.view" },
     { slug: "goods-receipts", name: "Penerimaan Barang", icon: "box", permission: "grn.view" },
     { slug: "invoices", name: "Tagihan Supplier", icon: "wallet", permission: "invoices.view" },
@@ -18,10 +18,10 @@ export const navigation: { title: string; items: NavigationItem[] }[] = [
     { slug: "stock-movements", name: "Mutasi Stok", icon: "arrows", permission: "inventory.view" },
     { slug: "distributions", name: "Distribusi Barang", icon: "truck", permission: "distribution.view" },
   ] },
-  { title: "MASTER DATA", items: [
+  { title: "MASTER DATA", masterData: true, items: [
     { slug: "companies", name: "Profil Perusahaan", icon: "box", permission: "companies.view" },
     { slug: "suppliers", name: "Supplier", icon: "users", permission: "suppliers.view" },
-    { slug: "categories", name: "Kategori", icon: "category", permission: "categories.view" },
+    { slug: "categories", name: "Kategori Produk", icon: "category", permission: "categories.view" },
     { slug: "tax-types", name: "Jenis Pajak", icon: "category", permission: "taxes.view" },
     { slug: "tax-rates", name: "Tarif Pajak", icon: "wallet", permission: "taxes.view" },
     { slug: "departments", name: "Departemen", icon: "grid", permission: "departments.view" },
@@ -33,15 +33,35 @@ export const navigation: { title: string; items: NavigationItem[] }[] = [
   ] },
 ];
 
+export function isSuperAdmin(user: ApiUser) {
+  return user.roles.includes("super_admin");
+}
+
 export function visibleNavigation(user: ApiUser) {
   const permissions = new Set(user.permissions);
-  return navigation.map(group => ({
+  return navigation.filter(group => !group.masterData || isSuperAdmin(user)).map(group => ({
     ...group,
     items: group.items.filter(item => {
       if (item.slug === "distributions" && user.employee_id !== null) return true;
+      if (item.slug === "purchase-orders" && !isSuperAdmin(user)
+        && (user.roles.includes("hr") || user.roles.includes("general_manager"))) return false;
+      if (item.roles && !item.roles.some(role => user.roles.includes(role))) return false;
       return item.permission !== undefined && permissions.has(item.permission);
     }),
   })).filter(group => group.items.length > 0);
+}
+
+export function canAccessModule(user: ApiUser, slug: string) {
+  return visibleNavigation(user).some(group => group.items.some(item => item.slug === slug));
+}
+
+export type PurchaseOrderDestination = { slug: "purchase-orders" | "approvals"; id: string | number };
+
+export function purchaseOrderHref(user: ApiUser, destination: PurchaseOrderDestination) {
+  const { slug, id } = destination;
+  if (canAccessModule(user, slug)) return `/${slug}?po=${id}`;
+  if (slug === "purchase-orders" && canAccessModule(user, "approvals")) return `/approvals?po=${id}`;
+  return null;
 }
 
 export function workspaceHome(user: ApiUser) {

@@ -9,6 +9,7 @@ use App\Domain\Distribution\Actions\RequestDistribution;
 use App\Domain\Distribution\Enums\DistributionStatus;
 use App\Domain\Distribution\Exceptions\DistributionConflict;
 use App\Domain\Distribution\Models\Distribution;
+use App\Domain\Employee\Models\Employee;
 use App\Domain\Inventory\Exceptions\StockConflictException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Distribution\StoreDistributionRequest;
@@ -74,6 +75,27 @@ final class DistributionController extends Controller
                 'total' => $page->total(),
             ]],
         );
+    }
+
+    public function recipients(Request $request): JsonResponse
+    {
+        $actor = $request->user();
+        $filters = $request->validate(['per_page' => ['sometimes', 'integer', 'between:1,100']]);
+        $query = Employee::query()->where('is_active', true);
+        if (! $actor->can('distribution.create')) {
+            if (! $actor->tokenCan('employee:self')) {
+                throw new AuthorizationException('Tidak memiliki akses daftar penerima.');
+            }
+            $query->where('user_id', $actor->id);
+        }
+
+        $page = $query->orderBy('name')->orderBy('id')
+            ->paginate((int) ($filters['per_page'] ?? 15), ['id', 'employee_number', 'name']);
+
+        return ApiResponse::success($page->items(), meta: ['pagination' => [
+            'current_page' => $page->currentPage(),
+            'last_page' => $page->lastPage(),
+        ]]);
     }
 
     public function show(Request $request, Distribution $distribution): JsonResponse

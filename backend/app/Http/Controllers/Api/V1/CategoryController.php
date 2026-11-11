@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Domain\Category\Actions\DeleteCategory;
 use App\Domain\Category\Actions\SaveCategory;
 use App\Domain\Category\Models\Category;
+use App\Domain\Item\Policies\ItemPolicy;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Category\StoreCategoryRequest;
 use App\Http\Requests\V1\Category\UpdateCategoryRequest;
@@ -18,6 +19,28 @@ use Illuminate\Http\Request;
 
 final class CategoryController extends Controller
 {
+    public function itemOptions(Request $request): JsonResponse
+    {
+        abort_unless(ItemPolicy::canCreate($request->user()), 403);
+
+        return $this->options($request);
+    }
+
+    public function options(Request $request): JsonResponse
+    {
+        $filters = $request->validate([
+            'per_page' => ['sometimes', 'integer', 'between:1,100'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
+        $page = Category::query()->where('is_active', true)->orderBy('name')->orderBy('id')
+            ->paginate((int) ($filters['per_page'] ?? 100), ['id', 'code', 'name']);
+
+        return ApiResponse::success($page->items(), meta: ['pagination' => [
+            'current_page' => $page->currentPage(),
+            'last_page' => $page->lastPage(),
+        ]]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $filters = $request->validate([

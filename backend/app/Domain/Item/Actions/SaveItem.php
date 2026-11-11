@@ -17,17 +17,19 @@ final class SaveItem
         'category_id', 'sku', 'name', 'unit', 'minimum_stock', 'is_active',
     ];
 
-    public function create(array $data): Item
+    public function create(array $data, bool $awaitingFirstReceipt = false): Item
     {
         $data = Arr::only($data, self::EDITABLE);
         $data['is_active'] ??= true;
         $data['minimum_stock'] ??= '0';
 
         try {
-            return DB::transaction(function () use ($data): Item {
+            return DB::transaction(function () use ($data, $awaitingFirstReceipt): Item {
                 $this->assertActiveCategory((int) $data['category_id']);
 
-                $item = Item::query()->create($data);
+                $item = new Item($data);
+                $item->awaiting_first_receipt = $awaitingFirstReceipt;
+                $item->save();
 
                 return $this->fullItem($item->getKey());
             }, attempts: 3);

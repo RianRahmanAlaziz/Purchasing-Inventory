@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Domain\Purchasing\Actions;
 
 use App\Domain\Company\Models\Company;
-use App\Domain\Employee\Models\Employee;
 use App\Domain\Purchasing\Exceptions\PurchaseOrderConflict;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Purchasing\Support\PoMoney;
 use App\Domain\Supplier\Support\SupplierName;
 use App\Domain\Tax\Models\TaxRate;
 use App\Models\User;
+use App\Support\ShortReference;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -27,6 +27,7 @@ final class SaveDraftPurchaseOrder
             $po->created_by = $actorId;
 
             $this->writeDraft($po, $data, $actorId);
+            ShortReference::assign($po, 'po_number', 'PO');
             $this->event($po, $actorId, 'created', null, 'draft');
 
             return $this->load($po);
@@ -46,8 +47,6 @@ final class SaveDraftPurchaseOrder
             $merged = array_merge([
                 'supplier_id' => array_key_exists('supplier_name', $data) && ! array_key_exists('supplier_id', $data) ? null : $locked->supplier_id,
                 'supplier_name' => isset($data['supplier_id']) && (int) $data['supplier_id'] !== (int) $locked->supplier_id ? null : $locked->supplier_name_snapshot,
-                'requested_for_employee_id' => $locked->requested_for_employee_id,
-                'requested_for_department_id' => $locked->requested_for_department_id,
                 'order_date' => $locked->order_date->format('Y-m-d'),
                 'expected_date' => $locked->expected_date?->format('Y-m-d'),
                 'notes' => $locked->notes,
@@ -81,14 +80,7 @@ final class SaveDraftPurchaseOrder
         $masters = app(ResolvePurchaseOrderMasters::class);
         $supplier = $masters->supplier($data, $actor);
 
-        $employee = Employee::query()->with('department')
-            ->lockForUpdate()->findOrFail($data['requested_for_employee_id']);
-        if (! $employee->is_active || ! $employee->department?->is_active
-            || (int) $employee->department_id !== (int) $data['requested_for_department_id']) {
-            throw ValidationException::withMessages([
-                'requested_for_department_id' => ['Departemen harus aktif dan sesuai departemen karyawan.'],
-            ]);
-        }
+        $requester = $masters->requester($po, $data);
 
         $orderDate = $data['order_date'];
         if (isset($data['expected_date']) && $data['expected_date'] < $orderDate) {
@@ -119,8 +111,7 @@ final class SaveDraftPurchaseOrder
             'supplier_address_snapshot' => $data['supplier_address'] ?? $supplier->address,
             'tax_scope' => $taxScope,
             'supplier_id' => $supplier->id,
-            'requested_for_employee_id' => $employee->id,
-            'requested_for_department_id' => $employee->department_id,
+            ...$requester,
             'supplier_name_snapshot' => isset($data['supplier_name']) ? SupplierName::display($data['supplier_name']) : $supplier->name,
             'supplier_code_snapshot' => $supplier->code,
             'order_date' => $orderDate,
@@ -200,7 +191,7 @@ final class SaveDraftPurchaseOrder
 
         $approvalBasis = PoMoney::add($subtotalCents, $addition);
         $grandTotal = PoMoney::subtract($approvalBasis, $withholding);
-        $threshold = PoMoney::cents((string) config('purchasing.gm_approval_threshold', '20000000.00'));
+        $threshold = PoMoney::cents((string) config('purchasing.gm_approval_threshold', '10000000.00'));
         $po->fill([
             'subtotal' => $subtotal,
             'discount_total' => PoMoney::format($discountTotal),

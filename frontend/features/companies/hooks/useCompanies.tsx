@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { api, apiList } from "@/lib/api";
 import { useSession } from "@/features/auth/Session";
+import { isSuperAdmin } from "@/features/dashboard/constants/navigation";
 import type { Company } from "../types";
 
 type CompaniesContextValue = {
@@ -30,8 +31,10 @@ function nameKey(name: string) { return name.trim().replace(/\s+/g, " ").toLocal
 
 export function CompaniesProvider({ children }: { children: React.ReactNode }) {
   const user = useSession();
-  const canRead = user.permissions.includes("companies.view");
-  const canManage = user.permissions.includes("companies.manage");
+  const admin = isSuperAdmin(user);
+  const canRead = user.permissions.includes("companies.view") && (admin || user.permissions.includes("po.view"));
+  const canManage = admin && user.permissions.includes("companies.manage");
+  const listPath = admin ? "companies" : "purchase-orders/suggestions/companies";
   const [companies, setCompanies] = useState<Company[]>([]);
   const [activeId, setActiveId] = useState("");
   const [ready, setReady] = useState(false);
@@ -41,7 +44,7 @@ export function CompaniesProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!canRead) return;
     const controller = new AbortController();
-    apiList<Company>("companies", controller.signal).then(rows => {
+    apiList<Company>(listPath, controller.signal).then(rows => {
       if (controller.signal.aborted) return;
       const loaded = rows.map(normalize);
       setCompanies(loaded);
@@ -54,10 +57,10 @@ export function CompaniesProvider({ children }: { children: React.ReactNode }) {
       }
     }, cause => { if (!controller.signal.aborted) { setReady(false); setError(cause instanceof Error ? cause.message : "Profil PT gagal dimuat."); } });
     return () => controller.abort();
-  }, [canRead, canManage, user.id, user.default_company_id]);
+  }, [canRead, canManage, listPath, user.id, user.default_company_id]);
   async function refresh() {
     try {
-      const rows = (await apiList<Company>("companies")).map(normalize);
+      const rows = (await apiList<Company>(listPath)).map(normalize);
       setCompanies(rows); setActiveId(current => rows.some(company => company.id === current) ? current : rows[0]?.id ?? "");
       setReady(true); setError("");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Profil PT gagal dimuat."); }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\V1\Purchasing;
 
+use App\Domain\Purchasing\Actions\PurchaseOrderWorkflow;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class PoDecisionRequest extends FormRequest
@@ -11,12 +12,10 @@ final class PoDecisionRequest extends FormRequest
     public function authorize(): bool
     {
         $step = $this->route('step');
-        if (! in_array($step, ['hr', 'gm'], true)) {
-            return false;
-        }
-        $permission = $this->routeIs('*.reject') ? 'po.reject.'.$step : 'po.approve.'.$step;
+        $user = $this->user();
+        $decision = $this->routeIs('*.reject') ? 'reject' : 'approve';
 
-        return $this->user()?->can($permission) ?? false;
+        return is_string($step) && $user !== null && PurchaseOrderWorkflow::canDecide($user, $step, $decision);
     }
 
     public function rules(): array

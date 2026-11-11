@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Api\V1;
 
+use App\Domain\Category\Models\Category;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Laravel\Sanctum\Sanctum;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 final class RoleAccessTest extends TestCase
@@ -57,6 +60,72 @@ final class RoleAccessTest extends TestCase
             ->assertJsonFragment([
                 'name' => 'super_admin',
             ]);
+    }
+
+    public function test_purchasing_roles_can_read_order_management(): void
+    {
+        foreach (['staff_hr', 'hr', 'general_manager'] as $role) {
+            Sanctum::actingAs(User::factory()->create(['is_active' => true])->assignRole($role), ['*']);
+
+            $this->getJson('/api/v1/orders')->assertOk();
+        }
+    }
+
+    public function test_only_super_admin_can_access_master_data_even_if_other_roles_have_permissions(): void
+    {
+        $adminRole = Role::findByName('super_admin', 'web');
+        $masters = ['companies', 'suppliers', 'categories', 'tax-types', 'tax-rates', 'departments', 'employees'];
+        $permissions = collect([
+            'companies.view', 'companies.manage', 'suppliers.view', 'suppliers.create',
+            'categories.view', 'categories.manage', 'taxes.view', 'taxes.manage',
+            'departments.view', 'departments.manage', 'employees.view', 'employees.manage',
+            'items.view', 'items.create', 'items.manage', 'po.view',
+        ])->map(static fn (string $name): Permission => Permission::findOrCreate($name, 'web'));
+        $admin = User::factory()->create(['is_active' => true])->assignRole($adminRole);
+        $admin->givePermissionTo($permissions);
+        Sanctum::actingAs($admin, ['*']);
+        foreach ($masters as $path) {
+            $this->getJson('/api/v1/'.$path)->assertOk();
+        }
+
+        foreach (['hr', 'general_manager', 'staff_hr'] as $role) {
+            $actor = User::factory()->create(['is_active' => true])->assignRole($role);
+            $actor->givePermissionTo($permissions);
+            Sanctum::actingAs($actor, ['*']);
+
+            foreach ($masters as $path) {
+                $this->getJson('/api/v1/'.$path)->assertForbidden();
+                $this->postJson('/api/v1/'.$path, [])->assertForbidden();
+            }
+            if ($role !== 'staff_hr') {
+                $this->postJson('/api/v1/items', [])->assertForbidden();
+                $this->getJson('/api/v1/items/category-options')->assertForbidden();
+            }
+            $this->getJson('/api/v1/items')->assertOk();
+            $this->getJson('/api/v1/purchase-orders/suggestions/companies')->assertOk();
+        }
+    }
+
+    public function test_staff_hr_can_create_a_stock_item_and_select_active_categories(): void
+    {
+        $category = Category::query()->create(['code' => 'STAFF-OK', 'name' => 'Kategori Staf Aktif', 'is_active' => true]);
+        $inactive = Category::query()->create(['code' => 'STAFF-OFF', 'name' => 'Kategori Staf Nonaktif', 'is_active' => false]);
+        $staff = User::factory()->create(['is_active' => true])->assignRole('staff_hr');
+        Sanctum::actingAs($staff, ['*']);
+
+        $this->getJson('/api/v1/items/category-options')->assertOk()
+            ->assertJsonFragment(['id' => $category->id, 'name' => $category->name])
+            ->assertJsonMissing(['id' => $inactive->id, 'name' => $inactive->name]);
+        $this->getJson('/api/v1/categories')->assertForbidden();
+
+        $payload = ['category_id' => $category->id, 'sku' => 'STAFF-NEW', 'name' => 'Barang Staf Baru', 'unit' => 'pcs'];
+        $this->postJson('/api/v1/items', $payload + ['stock_quantity' => '5'])
+            ->assertUnprocessable()->assertJsonValidationErrors('stock_quantity');
+        $item = $this->postJson('/api/v1/items', $payload)->assertCreated()
+            ->assertJsonPath('data.stock_quantity', '0.000')->json('data.id');
+        $this->patchJson("/api/v1/items/{$item}", ['name' => 'Nama Baru'])->assertForbidden();
+        $this->deleteJson("/api/v1/items/{$item}")->assertForbidden();
+        $this->postJson("/api/v1/items/{$item}/stock-adjustments", [])->assertForbidden();
     }
 
     public function test_user_without_role_or_employee_cannot_enter_api(): void

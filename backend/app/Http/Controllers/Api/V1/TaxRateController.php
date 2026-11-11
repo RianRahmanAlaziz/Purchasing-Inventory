@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Domain\Tax\Actions\DeleteTaxRate;
+use App\Domain\Tax\Actions\ImportRefnusaPpn;
 use App\Domain\Tax\Actions\SaveTaxRate;
 use App\Domain\Tax\Exceptions\TaxConflictException;
+use App\Domain\Tax\Exceptions\TaxReferenceUnavailable;
 use App\Domain\Tax\Models\TaxRate;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Tax\StoreTaxRateRequest;
@@ -85,6 +87,19 @@ final class TaxRateController extends Controller
             message: 'Tarif pajak berhasil dibuat.',
             status: 201,
         );
+    }
+
+    public function importRefnusa(ImportRefnusaPpn $action): JsonResponse
+    {
+        try {
+            $result = $action->execute();
+        } catch (TaxReferenceUnavailable $e) {
+            return ApiResponse::error($e->getMessage(), 502);
+        } catch (TaxConflictException $e) {
+            return ApiResponse::error($e->getMessage(), 409);
+        }
+
+        return ApiResponse::success($result, 'Referensi PPN Nonmewah dari Refnusa berhasil diproses.');
     }
 
     public function update(

@@ -15,7 +15,7 @@ import { AccountEditor, RoleAssignment } from "../components/UserEditors";
 import type { Account, Role } from "../types";
 
 type Selection = { mode: "create" } | { mode: "edit" | "roles"; account: Account };
-const columns = ["ID", "Nama", "Email", "Role", "Status", "ID Karyawan"];
+const columns = ["ID", "Nama", "Email", "Role", "Status"];
 
 export function UsersView() {
   const user = useSession();
@@ -57,7 +57,7 @@ export function UsersView() {
         <ExportButton filename="pengguna.csv" columns={[...columns, "Tanggal dibuat"]} disabled={!accounts.data || accounts.loading}
           records={filtered.map(account => ({
             date: datePart(account.created_at),
-            cells: [account.id, account.name, account.email, account.roles.join(", "), account.is_active ? "Aktif" : "Nonaktif", account.employee_id ?? "", datePart(account.created_at)],
+            cells: [account.id, account.name, account.email, account.roles.join(", "), account.is_active ? "Aktif" : "Nonaktif", datePart(account.created_at)],
           }))}/>
         {canEdit && <Button disabled={accounts.loading || !roles.data || roles.loading} onClick={() => open({ mode: "create" })}><Icon name="plus" size={17}/> Tambah Pengguna</Button>}
       </div>
@@ -85,7 +85,6 @@ export function UsersView() {
               <td>{account.email}</td>
               <td>{account.roles.join(", ") || "—"}</td>
               <td><Badge tone={account.is_active ? "green" : "gray"}>{account.is_active ? "Aktif" : "Nonaktif"}</Badge></td>
-              <td>{account.employee_id ?? "—"}</td>
               {canAssign && <td><div className="access-row-actions">
                 {canEdit && <Button variant="secondary" aria-label={"Edit " + account.name} onClick={() => open({ mode: "edit", account })}>Edit</Button>}
                 <Button variant="secondary" aria-label={"Atur role " + account.name} disabled={!roles.data || roles.loading} onClick={() => open({ mode: "roles", account })}>Atur role</Button>

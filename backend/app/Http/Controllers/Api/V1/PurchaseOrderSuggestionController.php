@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Domain\Category\Models\Category;
 use App\Domain\Item\Models\Item;
 use App\Domain\Supplier\Models\Supplier;
 use App\Http\Controllers\Controller;
@@ -16,12 +15,14 @@ use Illuminate\Support\Str;
 
 final class PurchaseOrderSuggestionController extends Controller
 {
-    public function categories(Request $request): JsonResponse
+    public function employees(Request $request): JsonResponse
     {
-        $data = $request->validate(['per_page' => ['sometimes', 'integer', 'between:1,100']]);
-        $page = Category::query()->where('is_active', true)->orderBy('name')->paginate($data['per_page'] ?? 100, ['id', 'code', 'name']);
+        return $this->requesters($request, 'employees', 'requested_for_employee_name_snapshot');
+    }
 
-        return ApiResponse::success($page->items(), meta: ['pagination' => ['last_page' => $page->lastPage(), 'current_page' => $page->currentPage()]]);
+    public function departments(Request $request): JsonResponse
+    {
+        return $this->requesters($request, 'departments', 'requested_for_department_name_snapshot');
     }
 
     public function suppliers(Request $request): JsonResponse
@@ -54,12 +55,13 @@ final class PurchaseOrderSuggestionController extends Controller
         $history = DB::table('purchase_order_items as line')->joinSub($latest, 'latest', 'latest.id', '=', 'line.id')
             ->join('items as item', 'item.id', '=', 'line.item_id')->join('categories as category', 'category.id', '=', 'item.category_id')
             ->where('item.is_active', true)->where('category.is_active', true)->orderByDesc('line.id')->limit($limit)
-            ->get(['line.item_id', 'line.item_name_snapshot', 'line.unit_price', 'item.name', 'item.sku', 'item.unit', 'item.stock_quantity', 'item.category_id'])
+            ->get(['line.item_id', 'line.item_name_snapshot', 'line.unit_price', 'item.name', 'item.sku', 'item.unit', 'item.stock_quantity', 'item.category_id', 'item.awaiting_first_receipt'])
             ->map(fn ($row): array => ['id' => (int) $row->item_id, 'name' => $row->item_name_snapshot,
                 'stock_name' => $row->name, 'sku' => $row->sku, 'unit' => $row->unit,
-                'unit_price' => (string) $row->unit_price, 'stock_quantity' => (string) $row->stock_quantity,
+                'unit_price' => (string) $row->unit_price,
+                ...($row->awaiting_first_receipt ? [] : ['stock_quantity' => (string) $row->stock_quantity]),
                 'category_id' => (int) $row->category_id, 'source' => 'history'])->all();
-        $stock = Item::query()->where('is_active', true)->whereHas('category', fn ($query) => $query->where('is_active', true))
+        $stock = Item::query()->inInventory()->where('is_active', true)->whereHas('category', fn ($query) => $query->where('is_active', true))
             ->where(fn ($query) => $query->whereRaw("name LIKE ? ESCAPE '!'", [$pattern])->orWhereRaw("sku LIKE ? ESCAPE '!'", [$pattern]))
             ->orderBy('name')->orderBy('sku')->limit($limit)->get()->map(fn ($item): array => [
                 'id' => (int) $item->id, 'name' => $item->name, 'stock_name' => $item->name,
@@ -68,6 +70,25 @@ final class PurchaseOrderSuggestionController extends Controller
             ])->all();
 
         return ApiResponse::success($this->merge($history, $stock, $limit));
+    }
+
+    private function requesters(Request $request, string $table, string $snapshot): JsonResponse
+    {
+        [$pattern, $limit] = $this->filters($request);
+        $history = DB::table('purchase_orders')->whereNull('deleted_at')
+            ->whereRaw("LOWER({$snapshot}) LIKE LOWER(?) ESCAPE '!'", [$pattern])
+            ->select("{$snapshot} as name")->selectRaw('MAX(id) as id')
+            ->groupBy($snapshot)->orderByDesc('id')->limit($limit)->get();
+        $master = DB::table($table)->where('is_active', true)
+            ->whereRaw("LOWER(name) LIKE LOWER(?) ESCAPE '!'", [$pattern])
+            ->orderBy('name')->orderBy('id')->limit($limit)->get(['id', 'name']);
+
+        $results = $history->map(fn ($row): array => ['id' => (int) $row->id, 'name' => $row->name, 'source' => 'history'])
+            ->concat($master->map(fn ($row): array => ['id' => (int) $row->id, 'name' => $row->name, 'source' => 'master']))
+            ->unique(fn (array $row): string => Str::lower(Str::squish($row['name'])))
+            ->take($limit)->values()->all();
+
+        return ApiResponse::success($results);
     }
 
     private function filters(Request $request): array

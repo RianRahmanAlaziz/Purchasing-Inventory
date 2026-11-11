@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Reporting\Services;
 
+use App\Domain\Item\Models\Item;
+use App\Domain\Purchasing\Models\Order;
 use App\Models\User;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -44,7 +46,7 @@ final class DashboardReportService
             $sections['purchase_orders'] = $this->purchaseOrders($filters);
         }
         if ($actor->can('orders.view')) {
-            $sections['orders'] = $this->orders($filters);
+            $sections['orders'] = $this->orders($actor, $filters);
         }
         if ($actor->can('grn.view')) {
             $sections['goods_receipts'] = $this->goodsReceipts($filters);
@@ -88,9 +90,9 @@ final class DashboardReportService
     }
 
     /** @return array<string, mixed> */
-    private function orders(array $filters): array
+    private function orders(User $actor, array $filters): array
     {
-        $query = DB::table('orders');
+        $query = Order::query()->visibleTo($actor)->toBase();
         $this->range($query, 'created_at', $filters);
 
         return [
@@ -115,6 +117,7 @@ final class DashboardReportService
     /** @return array<string, mixed> */
     private function inventory(array $filters): array
     {
+        $items = Item::query()->inInventory()->where('is_active', true);
         $movements = DB::table('stock_movements');
         $this->range($movements, 'created_at', $filters);
         $movementCounts = $this->statusCounts(
@@ -122,11 +125,8 @@ final class DashboardReportService
         );
 
         return [
-            'active_items' => DB::table('items')->where('is_active', true)->count(),
-            'low_stock_items' => DB::table('items')
-                ->where('is_active', true)
-                ->whereColumn('stock_quantity', '<=', 'minimum_stock')
-                ->count(),
+            'active_items' => $items->count(),
+            'low_stock_items' => $items->lowStock()->count(),
             'movement_count' => $movementCounts['total'],
             'movement_by_type' => $movementCounts['by_status'],
             'date_basis' => [

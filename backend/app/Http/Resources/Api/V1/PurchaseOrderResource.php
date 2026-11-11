@@ -24,7 +24,11 @@ final class PurchaseOrderResource extends JsonResource
             'company_snapshot' => $this->company_snapshot,
             'tax_scope' => $this->tax_scope,
             'requested_for_employee_id' => $this->requested_for_employee_id,
+            'requested_for_employee_name' => $this->requested_for_employee_name_snapshot
+                ?? $this->whenLoaded('employee', static fn ($employee): string => $employee->name, null),
             'requested_for_department_id' => $this->requested_for_department_id,
+            'requested_for_department_name' => $this->requested_for_department_name_snapshot
+                ?? $this->whenLoaded('department', static fn ($department): string => $department->name, null),
             'created_by' => $this->created_by,
             'order_date' => $this->order_date?->format('Y-m-d'),
             'expected_date' => $this->expected_date?->format('Y-m-d'),

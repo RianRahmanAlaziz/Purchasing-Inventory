@@ -30,12 +30,18 @@ final class Item extends Model
             'last_purchase_price' => 'decimal:2',
             'is_active' => 'boolean',
             'is_low_stock' => 'boolean',
+            'awaiting_first_receipt' => 'boolean',
         ];
     }
 
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    public function scopeInInventory(Builder $query): Builder
+    {
+        return $query->where('items.awaiting_first_receipt', false);
     }
 
     // MySQL DECIMAL dibandingkan di SQL, tidak dengan float PHP.

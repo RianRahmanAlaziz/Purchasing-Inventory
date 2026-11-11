@@ -38,11 +38,7 @@ final class DepartmentApiTest extends TestCase
     /** @param list<string> $permissions */
     private function actAsRoleWithPermissions(array $permissions): void
     {
-        $roleName = in_array('departments.manage', $permissions, true)
-            ? 'department_editor_test'
-            : 'department_reader_test';
-
-        $role = Role::findOrCreate($roleName, 'web');
+        $role = Role::findOrCreate('super_admin', 'web');
         $role->syncPermissions($permissions);
 
         $user = User::factory()->create(['is_active' => true]);

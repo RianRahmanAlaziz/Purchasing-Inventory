@@ -43,10 +43,11 @@ function CompanyForm({ initial, close }: { initial: Company; close: () => void }
 
 export function CompaniesView() {
   const { companies, activeId, activateCompany, deleteCompany, clearError, ready, busy, error, legacyCount, importBrowserCompanies, refresh } = useCompanies();
-  const canManage = useSession().permissions.includes("companies.manage");
+  const user = useSession();
+  const canManage = user.permissions.includes("companies.manage");
   const [editing, setEditing] = useState<Company | null>(null);
   const [deleting, setDeleting] = useState<Company | null>(null);
-  const canRead = useSession().permissions.includes("companies.view");
+  const canRead = user.roles.includes("super_admin") && user.permissions.includes("companies.view");
   if (!canRead) return <p className="form-error" role="alert">Anda tidak memiliki izin melihat profil perusahaan.</p>;
   return <>
     <div className="page-heading"><div><div className="eyebrow">MASTER DATA / IDENTITAS PERUSAHAAN</div>

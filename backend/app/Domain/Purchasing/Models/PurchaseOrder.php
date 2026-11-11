@@ -8,6 +8,7 @@ use App\Domain\Employee\Models\Department;
 use App\Domain\Employee\Models\Employee;
 use App\Domain\Supplier\Models\Supplier;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -21,6 +22,7 @@ final class PurchaseOrder extends Model
     protected $fillable = [
         'po_number', 'supplier_id', 'requested_for_employee_id',
         'requested_for_department_id', 'created_by',
+        'requested_for_employee_name_snapshot', 'requested_for_department_name_snapshot',
         'supplier_name_snapshot', 'supplier_code_snapshot',
         'order_date', 'expected_date', 'status', 'subtotal',
         'tax_addition_total', 'tax_withholding_total', 'total_amount',
@@ -52,6 +54,15 @@ final class PurchaseOrder extends Model
             'supplier_confirmed_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
+    }
+
+    public function scopeVisibleTo(Builder $query, User $actor): Builder
+    {
+        if ($actor->hasRole('general_manager') && ! $actor->hasAnyRole(['hr', 'super_admin'])) {
+            $query->whereRelation('approvals', 'role_name', 'general_manager');
+        }
+
+        return $query;
     }
 
     public function supplier(): BelongsTo

@@ -30,7 +30,7 @@ final class ItemController extends Controller
             'page' => ['sometimes', 'integer', 'min:1'],
         ]);
 
-        $query = Item::query()->withStockAlert()
+        $query = Item::query()->inInventory()->withStockAlert()
             ->with('category:id,code,name,is_active');
 
         if (isset($filters['search']) && trim($filters['search']) !== '') {
@@ -86,7 +86,7 @@ final class ItemController extends Controller
 
     public function show(Request $request, Item $item): JsonResponse
     {
-        $item = Item::query()->withStockAlert()
+        $item = Item::query()->inInventory()->withStockAlert()
             ->with('category:id,code,name,is_active')
             ->findOrFail($item->getKey());
 

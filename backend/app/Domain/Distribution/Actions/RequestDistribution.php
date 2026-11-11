@@ -11,6 +11,7 @@ use App\Domain\Employee\Models\Employee;
 use App\Domain\Inventory\Support\StockDecimal;
 use App\Domain\Item\Models\Item;
 use App\Models\User;
+use App\Support\ShortReference;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -45,10 +46,10 @@ final class RequestDistribution
                 throw new DistributionConflict('Item tidak boleh berulang dalam distribusi yang sama.');
             }
 
-            $active = Item::query()->whereIn('id', $ids)
+            $active = Item::query()->inInventory()->whereIn('id', $ids)
                 ->where('is_active', true)->count();
             if ($active !== count($ids)) {
-                throw new DistributionConflict('Seluruh barang yang diajukan harus aktif.');
+                throw new DistributionConflict('Seluruh barang yang diajukan harus aktif dan sudah masuk Stok Barang.');
             }
 
             $distribution = Distribution::query()->create([
@@ -59,6 +60,7 @@ final class RequestDistribution
                 'status' => DistributionStatus::Requested->value,
                 'requested_at' => now(),
             ]);
+            ShortReference::assign($distribution, 'distribution_number', 'DIST');
 
             foreach ($lines as $line) {
                 try {

@@ -55,7 +55,7 @@ final class SupplierApiTest extends TestCase
 
     private function actAsPermissions(array $permissions): User
     {
-        $role = Role::findOrCreate('supplier_feature_tester', 'web');
+        $role = Role::findOrCreate('super_admin', 'web');
         $role->syncPermissions($permissions);
 
         $user = User::factory()->create(['is_active' => true]);

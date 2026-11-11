@@ -28,7 +28,7 @@ final class OrderController extends Controller
             'page' => ['sometimes', 'integer', 'min:1'],
         ]);
 
-        $query = Order::query()->with('purchaseOrder');
+        $query = Order::query()->visibleTo($request->user())->with('purchaseOrder');
 
         if (isset($filters['status'])) {
             $query->where('status', $filters['status']);
@@ -57,9 +57,9 @@ final class OrderController extends Controller
         );
     }
 
-    public function summary(): JsonResponse
+    public function summary(Request $request): JsonResponse
     {
-        $counts = Order::query()
+        $counts = Order::query()->visibleTo($request->user())
             ->select('status')
             ->selectRaw('COUNT(*) as total')
             ->groupBy('status')
@@ -78,10 +78,10 @@ final class OrderController extends Controller
 
     public function show(
         Request $request,
-        Order $order,
+        string $order,
         OrderReceiptProgress $progress
     ): JsonResponse {
-        $order->load('purchaseOrder.items');
+        $order = Order::query()->visibleTo($request->user())->with('purchaseOrder.items')->findOrFail($order);
         if ($order->purchaseOrder === null) {
             return ApiResponse::error('Purchase Order terkait tidak ditemukan.', 409);
         }
@@ -99,8 +99,10 @@ final class OrderController extends Controller
         }
     }
 
-    public function receipts(Order $order): JsonResponse
+    public function receipts(Request $request, string $order): JsonResponse
     {
+        $order = Order::query()->visibleTo($request->user())->findOrFail($order);
+
         // Hanya histori GRN (Pending tetap tampil, tetapi bukan stok masuk).
         $receipts = DB::table('goods_receipts')
             ->where('purchase_order_id', $order->purchase_order_id)

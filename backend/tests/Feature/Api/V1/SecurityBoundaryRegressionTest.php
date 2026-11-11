@@ -123,6 +123,7 @@ final class SecurityBoundaryRegressionTest extends TestCase
     public function test_inventory_master_cannot_write_stock_balance_or_last_price(): void
     {
         [$manager] = $this->actor(['items.manage']);
+        $manager->assignRole(Role::findOrCreate('super_admin', 'web'));
         $this->login($manager);
 
         $this->patchJson("/api/v1/items/{$this->item->id}", [
@@ -193,6 +194,7 @@ final class SecurityBoundaryRegressionTest extends TestCase
     public function test_maker_checker_cannot_be_bypassed_even_with_approval_permission(): void
     {
         [$maker] = $this->actor(['po.create', 'po.submit', 'po.approve.hr']);
+        $maker->assignRole(Role::findOrCreate('hr', 'web'));
         $poId = $this->draft($maker);
         $this->login($maker);
         $this->postJson("/api/v1/purchase-orders/{$poId}/submit")->assertOk();

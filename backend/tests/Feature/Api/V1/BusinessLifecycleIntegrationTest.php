@@ -62,7 +62,7 @@ final class BusinessLifecycleIntegrationTest extends TestCase
             'grn.view', 'grn.create', 'grn.confirm',
             'distribution.view', 'distribution.create', 'distribution.approve',
             'distribution.reject', 'distribution.prepare', 'distribution.send',
-            'inventory.view', 'inventory.adjust', 'reports.view',
+            'inventory.view', 'inventory.adjust', 'items.view', 'reports.view',
         ] as $name) {
             Permission::findOrCreate($name, 'web');
         }
@@ -94,8 +94,8 @@ final class BusinessLifecycleIntegrationTest extends TestCase
         $this->maker = $this->actor([
             'po.view', 'po.create', 'po.submit', 'po.send', 'po.supplier-confirm',
         ]);
-        $this->hr = $this->actor(['po.approve.hr', 'grn.confirm']);
-        $this->gm = $this->actor(['po.approve.gm', 'distribution.approve', 'distribution.reject']);
+        $this->hr = $this->actor(['po.approve.hr', 'grn.confirm'], 'hr');
+        $this->gm = $this->actor(['po.approve.gm', 'distribution.approve', 'distribution.reject'], 'general_manager');
         $this->warehouse = $this->actor([
             'grn.view', 'grn.create', 'distribution.view', 'distribution.create',
             'distribution.prepare', 'distribution.send', 'inventory.adjust', 'inventory.view',
@@ -103,9 +103,9 @@ final class BusinessLifecycleIntegrationTest extends TestCase
     }
 
     /** @param list<string> $permissions */
-    private function actor(array $permissions): User
+    private function actor(array $permissions, ?string $roleName = null): User
     {
-        $role = Role::findOrCreate('e2e_quality_role_'.(++$this->roleCounter), 'web');
+        $role = Role::findOrCreate($roleName ?? 'e2e_quality_role_'.(++$this->roleCounter), 'web');
         $role->syncPermissions($permissions);
         $actor = User::factory()->create(['is_active' => true]);
         $actor->assignRole($role);
@@ -229,6 +229,58 @@ final class BusinessLifecycleIntegrationTest extends TestCase
             ->count();
     }
 
+    public function test_new_po_item_enters_inventory_only_after_a_confirmed_usable_receipt(): void
+    {
+        $this->maker->givePermissionTo(Permission::findOrCreate('items.manage', 'web'));
+        $this->warehouse->givePermissionTo(['items.view', 'reports.view']);
+        $payload = $this->poPayload();
+        $payload['items'] = [[
+            'name' => 'Barang Baru E2E',
+            'category_id' => $this->item->category_id,
+            'unit' => 'pcs',
+            'quantity' => '10.000',
+            'unit_price' => '100000.00',
+        ]];
+        $this->signIn($this->maker);
+        $draft = $this->postJson('/api/v1/purchase-orders', $payload)->assertCreated();
+        $poId = (int) $draft->json('data.id');
+        $itemId = (int) $draft->json('data.items.0.item_id');
+
+        $this->signIn($this->warehouse);
+        $this->getJson('/api/v1/items')->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $this->item->id)->assertJsonPath('data.0.stock_quantity', '0.000');
+        $this->getJson('/api/v1/dashboard/low-stock')->assertOk()->assertJsonCount(1, 'data');
+        $this->getJson('/api/v1/dashboard/overview')->assertOk()
+            ->assertJsonPath('data.sections.inventory.active_items', 1)
+            ->assertJsonPath('data.sections.inventory.low_stock_items', 1);
+        $this->postJson("/api/v1/items/{$itemId}/stock-adjustments", [
+            'expected_quantity' => '0', 'target_quantity' => '10', 'reason' => 'Belum ada penerimaan barang',
+        ], ['Idempotency-Key' => (string) Str::uuid()])->assertConflict();
+        $this->postJson('/api/v1/distributions', [
+            'employee_id' => $this->employee->id, 'purpose' => 'Permintaan perlengkapan kerja',
+            'items' => [['item_id' => $itemId, 'quantity' => '1.000']],
+        ])->assertConflict();
+
+        $this->approvePo($poId);
+        $this->sendPo($poId);
+        $this->postJson("/api/v1/purchase-orders/{$poId}/supplier-confirm")->assertOk();
+        $this->confirmGrn($this->createGrn($poId, '3.000', '3.000'));
+
+        $grnId = $this->createGrn($poId, '6.000', '1.000');
+        $this->getJson("/api/v1/items/{$itemId}")->assertNotFound();
+        $this->getJson('/api/v1/items?search=Barang%20Baru%20E2E')->assertOk()->assertJsonCount(0, 'data');
+
+        $this->confirmGrn($grnId);
+        $this->signIn($this->warehouse);
+        $this->getJson('/api/v1/items?search=Barang%20Baru%20E2E')->assertOk()
+            ->assertJsonPath('data.0.id', $itemId)->assertJsonPath('data.0.stock_quantity', '5.000');
+
+        $this->postJson("/api/v1/items/{$itemId}/stock-adjustments", [
+            'expected_quantity' => '5', 'target_quantity' => '0', 'reason' => 'Hasil pemeriksaan stok fisik',
+        ], ['Idempotency-Key' => (string) Str::uuid()])->assertCreated();
+        $this->getJson("/api/v1/items/{$itemId}")->assertOk()->assertJsonPath('data.stock_quantity', '0.000');
+    }
+
     public function test_full_journey_po_partial_damaged_grn_order_and_employee_distribution(): void
     {
         $poId = $this->createPo();
@@ -280,7 +332,7 @@ final class BusinessLifecycleIntegrationTest extends TestCase
 
     public function test_above_threshold_requires_hr_then_gm_and_only_one_order(): void
     {
-        $poId = $this->createPo('20000000.01', '1.000');
+        $poId = $this->createPo('10000000.01', '1.000');
         $this->signIn($this->maker);
         $this->postJson("/api/v1/purchase-orders/{$poId}/submit")->assertOk();
         $this->signIn($this->gm);

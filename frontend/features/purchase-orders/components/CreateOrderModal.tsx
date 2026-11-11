@@ -6,16 +6,18 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useCompanies } from "@/features/companies/hooks/useCompanies";
 import { useSession } from "@/features/auth/Session";
+import { canCreateStockItem } from "@/features/items/utils/access";
 import { useApiData } from "@/features/modules/hooks/useApiData";
-import { get, records, type Row } from "@/features/modules/api-types";
+import { records, type Row } from "@/features/modules/api-types";
 import { api } from "@/lib/api";
 import { workspaceToday } from "@/lib/export-period";
+import { formatEffectiveTaxRate } from "@/lib/tax-rate";
 import { PoAutocomplete, type PoSuggestion } from "./PoAutocomplete";
 import { documentMoney, lineTotals, orderTotals } from "../utils/totals";
-import { apiLine, emptyLine, legacyLine, poPayload, readBrowserDraft, snapshotCompany, type DraftLine, type TaxOption } from "../utils/api-draft";
+import { apiLine, clearPoFormInput, emptyLine, keepPoFormInput, legacyLine, poPayload, readBrowserDraft,
+  readPoFormInput, snapshotCompany, type DraftLine, type PoFormInput, type TaxOption } from "../utils/api-draft";
 import { ITEM_UNITS } from "@/lib/item-units";
 
-const percent = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 4 });
 type Props = { row?: Row; onClose: () => void; onSaved: () => void };
 
 export function CreateOrderModal(props: Props) {
@@ -30,39 +32,46 @@ export function CreateOrderModal(props: Props) {
 
 function OrderForm({ row, onClose, onSaved }: Props) {
   const user = useSession();
-  const storageKey = "ris-po-form-draft-" + user.id;
-  const [restored] = useState(() => row ? { draft: undefined, error: "" } : readBrowserDraft(storageKey));
+  const legacyKey = "ris-po-form-draft-" + user.id;
+  const inputKey = "ris-po-input-v1-" + user.id + "-" + (row?.id ?? "new");
+  const sourceVersion = records(row, "events").length;
+  const [restored] = useState(() => row ? { draft: undefined, error: "" } : readBrowserDraft(legacyKey));
   const legacy = restored.draft;
+  const [initialInput] = useState<PoFormInput>(() => ({
+    companyChoice: row?.company_id ? String(row.company_id) : null,
+    supplierId: String(row?.supplier_id ?? ""),
+    supplierName: String(row?.supplier_name_snapshot ?? legacy?.supplier ?? ""),
+    supplierAddress: String(row?.supplier_address_snapshot ?? legacy?.supplierAddress ?? ""),
+    employeeName: String(row?.requested_for_employee_name ?? ""),
+    departmentName: String(row?.requested_for_department_name ?? ""),
+    date: String(row?.order_date ?? legacy?.date ?? workspaceToday()),
+    expectedDate: String(row?.expected_date ?? legacy?.expectedDate ?? ""),
+    notes: String(row?.notes ?? legacy?.notes ?? ""),
+    lines: row ? records(row, "items").map(apiLine) : legacy?.lines?.map(legacyLine) ?? [emptyLine()],
+    orderRateIds: records(row, "taxes").map(rate => String(rate.tax_rate_id)),
+  }));
+  const [input, setInput] = useState(() => readPoFormInput(inputKey, sourceVersion) ?? initialInput);
+  const [recovered, setRecovered] = useState(() => input !== initialInput);
+  const { companyChoice, supplierId, supplierName, supplierAddress, employeeName, departmentName,
+    date, expectedDate, notes, lines, orderRateIds } = input;
   const { companies, activeId, ready: companiesReady, error: companyError } = useCompanies();
-  const canManageItems = user.permissions.includes("items.manage");
-  const categories = useApiData<Row[]>(canManageItems ? "purchase-orders/suggestions/categories" : null, 0, true);
-  const employees = useApiData<Row[]>(user.permissions.includes("employees.view") ? "employees?is_active=1" : null, 0, true);
+  const categoryPath = user.permissions.includes("items.manage") ? "purchase-orders/suggestions/categories"
+    : canCreateStockItem(user) ? "items/category-options" : null;
+  const categories = useApiData<Row[]>(categoryPath, 0, true);
   const savedCompany = snapshotCompany(row);
-  const [companyChoice, setCompany] = useState<string | null>(row?.company_id ? String(row.company_id) : null);
   const legacyCompany = legacy?.company?.name
     ? companies.find(company => company.name.trim().replace(/\s+/g, " ").toLowerCase() === legacy.company!.name.trim().replace(/\s+/g, " ").toLowerCase())
     : undefined;
   const companyId = companyChoice ?? (legacy?.company ? legacyCompany?.id ?? "" : activeId);
   const company = savedCompany?.id === companyId ? savedCompany : companies.find(entry => entry.id === companyId);
-  const [supplierId, setSupplierId] = useState(String(row?.supplier_id ?? ""));
-  const [supplierName, setSupplierName] = useState(String(row?.supplier_name_snapshot ?? legacy?.supplier ?? ""));
-  const [supplierAddress, setSupplierAddress] = useState(String(row?.supplier_address_snapshot ?? legacy?.supplierAddress ?? ""));
-  const [employeeId, setEmployee] = useState(String(row?.requested_for_employee_id ?? user.employee_id ?? ""));
-  const employee = employees.data?.find(entry => String(entry.id) === employeeId);
-  const departmentId = String(get(employee, "department.id") ?? "");
-  const [date, setDate] = useState(String(row?.order_date ?? legacy?.date ?? workspaceToday()));
-  const [expectedDate, setExpectedDate] = useState(String(row?.expected_date ?? legacy?.expectedDate ?? ""));
-  const [notes, setNotes] = useState(String(row?.notes ?? legacy?.notes ?? ""));
-  const [lines, setLines] = useState<DraftLine[]>(() => row ? records(row, "items").map(apiLine) : legacy?.lines?.map(legacyLine) ?? [emptyLine()]);
   const taxScope = row?.tax_scope === "order" ? "order" : "line";
-  const [orderRateIds, setOrderRates] = useState(() => records(row, "taxes").map(rate => String(rate.tax_rate_id)));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(restored.error);
   const canReadTaxes = user.permissions.includes("taxes.view");
   const taxes = useApiData<TaxOption[]>(canReadTaxes && date ? "taxes/options?date=" + encodeURIComponent(date) : null);
   const rates = taxes.data ?? [];
   const unlinkedItems = lines.some(line => !line.itemId && line.itemName.trim());
-  const masterLoading = employees.loading || (unlinkedItems && categories.loading);
+  const masterLoading = unlinkedItems && categories.loading;
   const taxPending = taxes.loading && (taxScope === "line" ? lines.some(line => !!line.taxRateId) : orderRateIds.length > 0);
   const resolvedLines = lines;
   const chosenOrderRates = orderRateIds.map(id => rates.find(rate => String(rate.id) === id) ?? (() => {
@@ -82,18 +91,39 @@ function OrderForm({ row, onClose, onSaved }: Props) {
     taxPercent: Number(rate.rate_percent), taxRate: { id: rate.id, label: rate.label, direction: rate.tax_type.direction, baseFactor: Number(rate.taxable_base_factor) },
   }).tax, 0) : 0;
   const totals = { ...baseTotals, tax: baseTotals.tax + orderTax, total: baseTotals.total + orderTax };
-  const missingPermissions = ["companies.view", "suppliers.view", "items.view", "employees.view"].filter(permission => !user.permissions.includes(permission));
-  const lookupError = companyError || employees.error || (unlinkedItems ? categories.error : "")
+  const missingPermissions = ["companies.view", "suppliers.view", "items.view"].filter(permission => !user.permissions.includes(permission));
+  const lookupError = companyError || (unlinkedItems ? categories.error : "")
     || (missingPermissions.length ? "Izin master data belum lengkap: " + missingPermissions.join(", ") + "." : "");
 
+  function changeInput(changes: Partial<PoFormInput>) {
+    setInput(current => ({ ...current, ...changes }));
+  }
+
+  function changeLines(update: (lines: DraftLine[]) => DraftLine[]) {
+    setInput(current => ({ ...current, lines: update(current.lines) }));
+  }
+
   function updateLine(id: string, patch: Partial<DraftLine>) {
-    setLines(current => current.map(line => line.id === id ? { ...line, ...patch } : line));
+    changeLines(current => current.map(line => line.id === id ? { ...line, ...patch } : line));
   }
   function selectItem(line: DraftLine, item: PoSuggestion) {
     updateLine(line.id, { itemId: String(item.id), itemName: item.name, description: item.name,
       categoryId: String(item.category_id ?? ""), unit: item.unit ?? "pcs", stockUnit: item.unit,
       unitPrice: line.unitPrice || (item.source === "history" || Number(item.unit_price) > 0 ? String(item.unit_price ?? "") : "") });
   }
+  function closeWithInput() {
+    if (busy) return;
+    if (input !== initialInput) keepPoFormInput(inputKey, sourceVersion, input);
+    onClose();
+  }
+
+  function resetInput() {
+    clearPoFormInput(inputKey);
+    setInput(initialInput);
+    setRecovered(false);
+    setError("");
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
@@ -105,21 +135,33 @@ function OrderForm({ row, onClose, onSaved }: Props) {
       if (selected.length && (taxes.loading || !taxes.data || taxes.error)) throw new Error("Tunggu tarif pajak selesai dimuat atau pilih Tanpa pajak.");
       if (selected.some(id => !rates.some(rate => String(rate.id) === id))) throw new Error("Pilih ulang pajak yang berlaku untuk tanggal pemesanan.");
       if (totals.total < 0) throw new Error("Pajak pemotong tidak boleh membuat total PO negatif.");
-      const body = poPayload({ companyId, supplierId, supplierName, employeeId, departmentId, supplierAddress, date, expectedDate, notes,
+      const body = poPayload({ companyId, supplierId, supplierName, employeeName, departmentName, supplierAddress, date, expectedDate, notes,
         lines: resolvedLines, taxScope, orderRateIds });
       setBusy(true);
-      await api(row ? "purchase-orders/" + row.id : "purchase-orders", { method: row ? "PATCH" : "POST", body });
-      if (legacy) { try { localStorage.removeItem(storageKey); } catch { /* The server copy is already committed. */ } }
+      await api(row ? "purchase-orders/" + row.id : "purchase-orders", {
+        method: row ? "PATCH" : "POST",
+        body: row ? {
+          ...body,
+          requested_for_employee_name: body.requested_for_employee_name === row.requested_for_employee_name
+            ? undefined : body.requested_for_employee_name,
+          requested_for_department_name: body.requested_for_department_name === row.requested_for_department_name
+            ? undefined : body.requested_for_department_name,
+        } : body,
+      });
+      clearPoFormInput(inputKey);
+      if (legacy) { try { localStorage.removeItem(legacyKey); } catch { /* The server copy is already committed. */ } }
       onSaved();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "PO gagal disimpan."); setBusy(false); }
   }
 
-  return <Modal title={row ? "Edit Purchase Order" : "Buat Purchase Order"} className="order-editor-modal po-document-editor" onClose={() => { if (!busy) onClose(); }}>
+  return <Modal title={row ? "Edit Purchase Order" : "Buat Purchase Order"} className="order-editor-modal po-document-editor" onClose={closeWithInput}>
     <form className="order-form" aria-busy={busy} onSubmit={event => void submit(event)}>
       <div className="po-form-body" inert={busy}>
-        {legacy && <p className="form-hint">Draft lama dimuat. Lengkapi isian untuk menyimpannya sebagai PO.</p>}
+        {recovered ? <p className="form-hint">Isian sebelumnya dipulihkan.{" "}
+          <button type="button" className="text-link" onClick={resetInput}>Buang isian sementara</button>
+        </p> : legacy && <p className="form-hint">Draft lama dimuat. Lengkapi isian untuk menyimpannya sebagai PO.</p>}
         <div className="po-company-picker"><label>
-          <select aria-label="PT penerbit" required disabled={!companiesReady} value={companyId} onChange={event => setCompany(event.target.value)}>
+          <select aria-label="PT penerbit" required disabled={!companiesReady} value={companyId} onChange={event => changeInput({ companyChoice: event.target.value })}>
             <option value="">Pilih PT penerbit</option>
             {savedCompany && !companies.some(entry => entry.id === savedCompany.id) && <option value={savedCompany.id} disabled>{savedCompany.name} (tersimpan)</option>}
             {companies.map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
@@ -131,23 +173,25 @@ function OrderForm({ row, onClose, onSaved }: Props) {
         </div>}
         <div className="form-row">
           <PoAutocomplete label="Supplier" kind="suppliers" value={supplierName} disabled={busy}
-            onChange={name => { setSupplierName(name); setSupplierId(""); }}
-            onSelect={option => { setSupplierName(option.name); setSupplierId(String(option.id)); setSupplierAddress(option.address ?? ""); }}/>
-          <label>Alamat supplier<textarea rows={3} maxLength={5000} value={supplierAddress} placeholder="Opsional" onChange={event => setSupplierAddress(event.target.value)}/></label>
+            onChange={name => changeInput({ supplierName: name, supplierId: "" })}
+            onSelect={option => changeInput({ supplierName: option.name, supplierId: String(option.id), supplierAddress: option.address ?? "" })}/>
+          <label>Alamat supplier<textarea rows={3} maxLength={5000} value={supplierAddress} placeholder="Opsional" onChange={event => changeInput({ supplierAddress: event.target.value })}/></label>
         </div>
         <div className="form-row">
-          <label>Tanggal pemesanan<input type="date" required value={date} onChange={event => setDate(event.target.value)}/></label>
-          <label>Kedatangan yang diharapkan<input type="date" min={date} value={expectedDate} onChange={event => setExpectedDate(event.target.value)}/></label>
+          <label>Tanggal pemesanan<input type="date" required value={date} onChange={event => changeInput({ date: event.target.value })}/></label>
+          <label>Kedatangan yang diharapkan<input type="date" min={date} value={expectedDate} onChange={event => changeInput({ expectedDate: event.target.value })}/></label>
         </div>
         <div className="form-row">
-          <label>Karyawan pemohon<select required value={employeeId} disabled={employees.loading} onChange={event => setEmployee(event.target.value)}>
-            <option value="">{employees.loading ? "Memuat karyawan..." : "Pilih karyawan"}</option>
-            {employees.data?.map(entry => <option key={entry.id} value={entry.id} disabled={!get(entry, "department.id")}>{String(entry.employee_number)} · {String(entry.name)}</option>)}
-          </select></label>
-          <label>Departemen pemohon<input readOnly value={String(get(employee, "department.name") ?? "")} placeholder="Mengikuti karyawan yang dipilih"/></label>
+          <PoAutocomplete label="Karyawan pemohon" kind="employees" value={employeeName} disabled={busy}
+            onChange={name => changeInput({ employeeName: name })} onSelect={option => changeInput({ employeeName: option.name })}/>
+          <PoAutocomplete label="Departemen pemohon" kind="departments" value={departmentName} disabled={busy}
+            onChange={name => changeInput({ departmentName: name })} onSelect={option => changeInput({ departmentName: option.name })}/>
         </div>
         <div className="line-editor-heading"><h3>Rincian barang</h3>
-          <Button type="button" variant="secondary" disabled={lines.length >= 100} onClick={() => setLines(current => [...current, emptyLine()])}><Icon name="plus" size={17}/> Tambah Barang</Button>
+          <Button type="button" variant="secondary" disabled={lines.length >= 100} onClick={() => {
+            const line = emptyLine();
+            changeLines(current => [...current, line]);
+          }}><Icon name="plus" size={17}/> Tambah Barang</Button>
         </div>
         <div className="line-editors">{resolvedLines.map((line, index) => {
           const selectedRate = rates.find(rate => String(rate.id) === line.taxRateId) ?? line.taxOption;
@@ -158,7 +202,7 @@ function OrderForm({ row, onClose, onSaved }: Props) {
               onChange={name => updateLine(line.id, { itemId: "", itemName: name, stockUnit: undefined,
                 description: !line.description || line.description === line.itemName ? name : line.description })}
               onSelect={option => selectItem(line, option)}/>
-            {!line.itemId && line.itemName.trim() && canManageItems && <label>Kategori barang baru
+            {!line.itemId && line.itemName.trim() && categoryPath && <label>Kategori barang baru
               <select aria-label={"Kategori barang baru " + (index + 1)} value={line.categoryId} disabled={categories.loading}
                 onChange={event => updateLine(line.id, { categoryId: event.target.value })}>
                 <option value="">{categories.loading ? "Memuat kategori..." : "Pilih kategori untuk barang baru"}</option>
@@ -178,22 +222,24 @@ function OrderForm({ row, onClose, onSaved }: Props) {
                 <option value="">Tanpa pajak</option>
                 {taxes.loading && <option disabled>Memuat tarif…</option>}
                 {line.taxRateId && !rates.some(rate => String(rate.id) === line.taxRateId) && <option value={line.taxRateId} disabled>{selectedRate?.label || "Tarif lama"} (tersimpan)</option>}
-                {rates.map(rate => <option key={rate.id} value={rate.id}>{rate.label} · {percent.format(Number(rate.rate_percent))}%{rate.tax_type.direction === "withholding" ? " (potongan)" : ""}</option>)}
+                {rates.map(rate => <option key={rate.id} value={rate.id}>{rate.label} · {formatEffectiveTaxRate(rate.rate_percent, rate.taxable_base_factor)}{rate.tax_type.direction === "withholding" ? " (potongan)" : ""}</option>)}
               </select></label>}
             </div>
             {taxScope === "line" && unavailable && <p className="po-tax-warning">Pilih ulang tarif pajak untuk tanggal pemesanan ini.</p>}
-            {lines.length > 1 && <button type="button" className="remove-line" onClick={() => setLines(current => current.filter(entry => entry.id !== line.id))}>Hapus barang {index + 1}</button>}
+            {lines.length > 1 && <button type="button" className="remove-line" onClick={() => changeLines(current => current.filter(entry => entry.id !== line.id))}>Hapus barang {index + 1}</button>}
           </fieldset>;
         })}</div>
-        {taxScope === "order" && <div><label>Pajak seluruh PO<select aria-label="Pajak seluruh PO" value="" onChange={event => { if (event.target.value) setOrderRates(current => [...current, event.target.value]); }}>
-          <option value="">Pilih tarif pajak</option>{rates.filter(rate => !orderRateIds.includes(String(rate.id))).map(rate => <option key={rate.id} value={rate.id}>{rate.label} · {percent.format(Number(rate.rate_percent))}%</option>)}
+        {taxScope === "order" && <div><label>Pajak seluruh PO<select aria-label="Pajak seluruh PO" value="" onChange={event => {
+          if (event.target.value) changeInput({ orderRateIds: [...orderRateIds, event.target.value] });
+        }}>
+          <option value="">Pilih tarif pajak</option>{rates.filter(rate => !orderRateIds.includes(String(rate.id))).map(rate => <option key={rate.id} value={rate.id}>{rate.label} · {formatEffectiveTaxRate(rate.rate_percent, rate.taxable_base_factor)}</option>)}
         </select></label>
           <ul className="editor-tax-list">{orderRateIds.map(id => <li key={id}><span>{chosenOrderRates.find(rate => String(rate.id) === id)?.label ?? "Tarif #" + id}</span>
-            <button type="button" aria-label={"Hapus tarif " + id} onClick={() => setOrderRates(current => current.filter(rate => rate !== id))}><Icon name="close" size={13}/></button></li>)}</ul>
+            <button type="button" aria-label={"Hapus tarif " + id} onClick={() => changeInput({ orderRateIds: orderRateIds.filter(rate => rate !== id) })}><Icon name="close" size={13}/></button></li>)}</ul>
         </div>}
         {taxes.loading && <p className="po-tax-note" role="status">Memuat tarif pajak untuk tanggal pemesanan…</p>}
         {taxes.error && <p className="po-tax-warning" role="alert">{taxes.error}</p>}
-        <label>Catatan<textarea rows={3} maxLength={5000} placeholder="Opsional" value={notes} onChange={event => setNotes(event.target.value)}/></label>
+        <label>Catatan<textarea rows={3} maxLength={5000} placeholder="Opsional" value={notes} onChange={event => changeInput({ notes: event.target.value })}/></label>
         <div className="editor-totals" aria-live="polite">
           <p>Subtotal<strong>{documentMoney(totals.subtotal)}</strong></p><p>Diskon<strong>− {documentMoney(totals.discount)}</strong></p>
           <p>Pajak<strong>{documentMoney(totals.tax)}</strong></p><p className="form-total">Total<strong>{documentMoney(totals.total)}</strong></p>
@@ -201,7 +247,7 @@ function OrderForm({ row, onClose, onSaved }: Props) {
       </div>
       <footer className="po-form-footer">
         {(error || lookupError) && <p className="form-error" role="alert">{error || lookupError}</p>}
-        <div className="modal-actions"><Button type="button" variant="secondary" disabled={busy} onClick={onClose}>Batal</Button>
+        <div className="modal-actions"><Button type="button" variant="secondary" disabled={busy} onClick={closeWithInput}>Tutup</Button>
           <Button type="submit" disabled={busy || !companiesReady || masterLoading || taxPending}>{busy ? "Menyimpan..." : masterLoading || taxPending ? "Memuat pilihan..." : row ? "Simpan Perubahan" : "Simpan Draft"}</Button></div>
       </footer>
     </form>

@@ -72,7 +72,21 @@
     width: 38px; height: 38px; background: #ffffffa6; border: 1px solid #ffffffdd;
     border-radius: 50%; color: #6181ad; box-shadow: 0 3px 8px #20437506;
   }
-  .notification-button i { background: #168bff; width: 6px; height: 6px; }
+  .notification-button { cursor: pointer; list-style: none; }
+  .notification-button::-webkit-details-marker { display: none; }
+  .notification-wrap[open] .notification-button { background: #fff; color: var(--primary); }
+  .notification-count {
+    position: absolute;
+    inset: -4px -5px auto auto;
+    min-width: 17px;
+    padding: 1px 4px;
+    border: 1px solid #fff;
+    border-radius: 12px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 10px;
+    line-height: 14px;
+  }
   .topnav-divider { background: #ccdbee; }
   .avatar { background: linear-gradient(140deg, #eff8ff, #c6ddfb); border-color: #fff; color: #315e9b; box-shadow: 0 3px 10px #315b9320; }
   .account-menu { position: relative; }
@@ -133,14 +147,23 @@
   .date-label { color: #627fa5; }
   .date-label>.ui-icon { color: #568dd4; }
   .button { border-radius: 11px; padding: 11px 16px; font-size: 12px; }
+  .button.primary, .button.success { border-radius: 9px; color: white; }
   .button.primary {
     background: linear-gradient(120deg, #168bff, #2469d7);
-    border-color: #3489ed; color: white;
-    box-shadow: 0 6px 13px #168bff25, inset 0 1px 0 #ffffff30;
+    border-color: #3489ed;
+    box-shadow: 0 3px 8px #168bff25;
   }
-  .button.primary:hover { background: linear-gradient(120deg, #087ced, #244897); box-shadow: 0 8px 18px #168bff35; }
+  .button.primary:hover { background: linear-gradient(120deg, #087ced, #245cc5); box-shadow: 0 4px 10px #168bff35; }
   .button.secondary { background: #ffffffc4; color: #44668f; border-color: #ffffff; box-shadow: 0 4px 12px #335f9b0b; }
   .button.secondary:hover { background: white; border-color: #c6dcfa; }
+  .button.success {
+    background: linear-gradient(120deg, #15804f, #126641);
+    border-color: #18895c;
+    box-shadow: 0 3px 8px #15804f25;
+  }
+  .button.success:hover:where(:not(:disabled)) { background: linear-gradient(120deg, #117344, #0e5837); box-shadow: 0 4px 10px #15804f35; }
+  .button.danger { background: #b4232b; border-color: #b4232b; color: white; }
+  .button.danger:hover:where(:not(:disabled)) { background: #941c23; border-color: #941c23; }
   .button:disabled { opacity: .5; box-shadow: none; }
   .overview-note {
     border: 1px solid #ffffffd9; border-radius: 21px;
@@ -188,7 +211,18 @@
   .panel-header { padding: 23px 23px 19px; }
   .panel-header h2 { color: #2d476b; font-size: 15px; font-weight: 600; letter-spacing: -.3px; }
   .panel-header p { color: #788eac; font-size: 11px; }
-  .panel-header select,select { border-radius: 20px; border-color: #dce8f9; background-color: #ffffffb8; color: #5f7ca2; }
+  select {
+    max-inline-size: 100%;
+    border-radius: 9px;
+    border-color: #ccdaed;
+    background-color: #f8fbff;
+    color: #3e5f87;
+  }
+  select:enabled:hover { border-color: #95b1d5; }
+  select:is(:focus-visible, :open) {
+    outline: 2px solid #4a7fc0;
+    outline-offset: -2px;
+  }
   .count-pill { border-radius: 7px; background: #e2eeff; color: #4886cc; }
   .text-link { color: #3278c8; font-size: 11px; }
   .text-link:hover { color: #174d8e; }
@@ -243,7 +277,64 @@
   .activity strong { color: #46658e; font-size: 12px; }
   .activity p,.activity small,.live-label { color: #7890b0; }
   .page-footer { color: #7d93b0; padding-bottom: 23px; }
-  .notification-panel { border-radius: 18px; border-color: white; background: #f9fcff; box-shadow: 0 15px 40px #1e4d8420; }
+  .notification-panel {
+    inset: calc(100% + 10px) 0 auto auto;
+    width: min(24rem, calc(100vw - 2rem));
+    padding: 0;
+    overflow: hidden;
+    border-radius: 13px;
+    border-color: var(--line);
+    background: #fff;
+    box-shadow: 0 15px 40px #1e4d8428;
+  }
+  .notification-heading, .notification-pages {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 13px 16px;
+  }
+  .notification-heading { border-bottom: 1px solid var(--line); }
+  .notification-pages { border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+  .notification-text-button { background: transparent; border: 0; padding: 4px; color: var(--primary); font-size: 12px; cursor: pointer; }
+  .notification-text-button:hover:not(:disabled) { text-decoration: underline; }
+  .notification-text-button:disabled { color: var(--muted); cursor: default; }
+  .notification-message { padding: 16px; color: var(--muted); font-size: 13px; }
+  .notification-message.form-error { color: #a03036; }
+  .notification-list {
+    margin: 0;
+    padding: 6px;
+    max-height: min(24rem, 55vh);
+    list-style: none;
+    overflow-y: auto;
+  }
+  .notification-panel .notification-entry {
+    position: relative;
+    display: grid;
+    gap: 4px;
+    padding: 10px 30px 10px 12px;
+    border: 0;
+    border-radius: 8px;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+  .notification-entry span, .notification-entry time { color: var(--muted); }
+  .notification-entry time { font-size: 11px; }
+  .notification-entry .notification-reason { white-space: pre-wrap; }
+  .notification-entry.is-unread { background: #edf5ff; }
+  .notification-entry.is-unread::after {
+    content: "";
+    position: absolute;
+    inset: 15px 13px auto auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .notification-panel .notification-entry:hover { background: var(--primary-soft); }
+  @media (max-width: 540px) {
+    .notification-panel { position: fixed; inset: 62px 16px auto; width: auto; }
+  }
   .modal { border-color: #ffffffd9; border-radius: 24px; background: linear-gradient(145deg, #fcfdff, #eef5ff); box-shadow: 0 30px 100px #12376838, inset 0 1px 0 white; }
   .modal::backdrop { background: #193f7663; backdrop-filter: blur(8px); }
   .modal>header h2 { color: #2c4e7d; font-weight: 550; }
@@ -400,8 +491,8 @@
 }
 .api-record-editor textarea { resize: vertical; }
 .api-record-editor select { padding-inline-end: 10px; text-overflow: ellipsis; }
-.api-record-editor :is(input, select, textarea):enabled:hover { border-color: #95b1d5; }
-.api-record-editor :is(input, select, textarea):focus {
+.api-record-editor :is(input, textarea):enabled:hover { border-color: #95b1d5; }
+.api-record-editor :is(input, textarea):focus {
   outline: none;
   border-color: #387bc8;
   background: #fff;
@@ -412,11 +503,11 @@
 .api-record-editor .editor-field .form-hint { margin: 0; line-height: 1.4; }
 
 @supports (appearance: base-select) and selector(select::picker(select)) {
-  :is(.api-record-editor, .po-document-editor) select,
-  :is(.api-record-editor, .po-document-editor) select::picker(select) { appearance: base-select; }
-  :is(.api-record-editor, .po-document-editor) select::picker-icon { color: #53759f; transition: rotate .15s ease; }
-  :is(.api-record-editor, .po-document-editor) select:open::picker-icon { rotate: 180deg; }
-  :is(.api-record-editor, .po-document-editor) select::picker(select) {
+  select:not([multiple], [size]),
+  select:not([multiple], [size])::picker(select) { appearance: base-select; }
+  select::picker-icon { color: #53759f; transition: rotate .15s ease; }
+  select:open::picker-icon { rotate: 180deg; }
+  select::picker(select) {
     max-height: min(17rem, 45dvh);
     margin-block: 4px;
     padding: 4px;
@@ -425,9 +516,9 @@
     background: #fff;
     box-shadow: 0 10px 22px #1f4b7524;
   }
-  :is(.api-record-editor, .po-document-editor) option { min-height: 35px; padding: 7px 8px; border-radius: 7px; color: #263f60; }
-  :is(.api-record-editor, .po-document-editor) option:disabled { color: #657b96; }
-  :is(.api-record-editor, .po-document-editor) option:enabled:is(:hover, :focus-visible, :checked) { background: #eaf3ff; }
+  select:not([multiple], [size]) option { min-height: 35px; padding: 7px 8px; border-radius: 7px; color: #263f60; }
+  select:not([multiple], [size]) option:disabled { color: #657b96; }
+  select:not([multiple], [size]) option:enabled:is(:hover, :focus-visible, :checked) { background: #eaf3ff; }
 }
 
 .editor-tax-list { display: flex; flex-wrap: wrap; gap: 5px; list-style: none; padding: 0; margin: 2px 0 0; }
@@ -559,8 +650,8 @@
 }
 .po-document-editor textarea { width: 100%; max-width: 100%; min-height: 104px; resize: vertical; font-family: inherit; line-height: 1.5; }
 .po-document-editor :is(input, textarea)::placeholder { color: #99a39f; }
-.po-document-editor :is(input, select, textarea):enabled:hover { border-color: #a6bddc; }
-.po-document-editor :is(input, select, textarea):focus {
+.po-document-editor :is(input, textarea):enabled:hover { border-color: #a6bddc; }
+.po-document-editor :is(input, textarea):focus {
   outline: none;
   border-color: #3977c4;
   background: #fff;
@@ -615,5 +706,5 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .po-document-editor :is(input, select, textarea) { transition: none; }
-  :is(.api-record-editor, .po-document-editor) select::picker-icon { transition: none; }
+  select::picker-icon { transition: none; }
 }

@@ -11,6 +11,7 @@ use App\Domain\Item\Models\Item;
 use App\Domain\Purchasing\Actions\SaveDraftPurchaseOrder;
 use App\Domain\Supplier\Models\Supplier;
 use App\Models\User;
+use App\Support\ShortReference;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
@@ -52,12 +53,12 @@ final class PurchaseOrderSuggestionsTest extends TestCase
             'department_id' => $this->department->id, 'is_active' => true]);
     }
 
-    private function signIn(array $names): void
+    private function signIn(array $names, ?string $roleName = null): void
     {
         foreach ($names as $name) {
             Permission::findOrCreate($name, 'web');
         }
-        $role = Role::findOrCreate('suggestion-test-'.count($names), 'web');
+        $role = Role::findOrCreate($roleName ?? 'suggestion-test-'.count($names), 'web');
         $role->syncPermissions($names);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         $this->actor = User::factory()->create(['is_active' => true])->assignRole($role);
@@ -83,6 +84,16 @@ final class PurchaseOrderSuggestionsTest extends TestCase
         return $payload;
     }
 
+    public function test_requester_suggestions_return_active_master_names_without_master_access(): void
+    {
+        $this->getJson('/api/v1/employees')->assertForbidden();
+        $this->getJson('/api/v1/departments')->assertForbidden();
+        $this->getJson('/api/v1/purchase-orders/suggestions/employees?q=pemohon')->assertOk()
+            ->assertJsonFragment(['name' => 'Pemohon', 'source' => 'master']);
+        $this->getJson('/api/v1/purchase-orders/suggestions/departments?q=operasional')->assertOk()
+            ->assertJsonFragment(['name' => 'Operasional', 'source' => 'master']);
+    }
+
     public function test_suggestions_include_po_snapshots_and_stock_with_the_correct_identity(): void
     {
         $payload = $this->payload();
@@ -104,17 +115,43 @@ final class PurchaseOrderSuggestionsTest extends TestCase
 
     public function test_free_names_create_linked_masters_without_touching_stock(): void
     {
+        $this->signIn(['po.view', 'po.create', 'suppliers.create', 'items.create', 'items.view'], 'staff_hr');
+        $this->getJson('/api/v1/items/category-options')->assertOk()
+            ->assertJsonFragment(['id' => $this->category->id, 'name' => $this->category->name]);
         $response = $this->postJson('/api/v1/purchase-orders', $this->freePayload())->assertCreated()
             ->assertJsonPath('data.supplier_name_snapshot', 'CV Supplier Bebas')->assertJsonPath('data.items.0.name', 'Barang Baru')
             ->assertJsonPath('data.total_amount', '25000.00');
         $newItem = Item::query()->findOrFail($response->json('data.items.0.item_id'));
         $this->assertSame('0.000', $newItem->stock_quantity);
         $this->assertSame($this->category->id, $newItem->category_id);
-        $this->assertStringStartsWith('ITEM-', $newItem->sku);
+        $this->assertSame(sprintf('ITEM-%06d', $newItem->id), $newItem->sku);
+        $response->assertJsonPath('data.items.0.sku', $newItem->sku);
+        $this->getJson('/api/v1/purchase-orders/suggestions/items?q=Barang%20Baru')->assertOk()
+            ->assertJsonPath('data.0.source', 'history')->assertJsonMissingPath('data.0.stock_quantity');
+        $this->getJson('/api/v1/purchase-orders/suggestions/items?q='.$newItem->sku)->assertOk()
+            ->assertJsonCount(0, 'data');
         $this->assertSame('5.000', $this->item->fresh()->stock_quantity);
         $this->assertDatabaseCount('stock_movements', 0);
         $this->assertDatabaseCount('suppliers', 2);
         $this->assertDatabaseCount('items', 2);
+    }
+
+    public function test_generated_sku_can_use_suffix_if_manual_sku_already_exists(): void
+    {
+        $sku = sprintf('ITEM-%06d', $this->item->id);
+        $manualItem = Item::query()->create([
+            'category_id' => $this->category->id,
+            'sku' => $sku,
+            'name' => 'Barang dengan SKU manual',
+            'unit' => 'pcs',
+            'minimum_stock' => '0',
+            'is_active' => true,
+        ]);
+
+        ShortReference::assign($this->item, 'sku', 'ITEM');
+
+        $this->assertSame($sku.'-1', $this->item->fresh()->sku);
+        $this->assertSame($sku, $manualItem->fresh()->sku);
     }
 
     public function test_typed_existing_names_reuse_masters_without_create_permissions(): void

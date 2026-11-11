@@ -12,6 +12,8 @@ final class StoreTaxRateRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
+        $this->mergeIfMissing(['effective_from' => now('Asia/Bangkok')->toDateString()]);
+
         if (is_string($this->input('label'))) {
             $this->merge(['label' => Str::squish($this->input('label'))]);
         }

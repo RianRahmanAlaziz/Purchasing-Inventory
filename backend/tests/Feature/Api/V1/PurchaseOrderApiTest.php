@@ -8,6 +8,7 @@ use App\Domain\Category\Models\Category;
 use App\Domain\Employee\Models\Department;
 use App\Domain\Employee\Models\Employee;
 use App\Domain\Item\Models\Item;
+use App\Domain\Purchasing\Actions\PurchaseOrderWorkflow;
 use App\Domain\Purchasing\Actions\SaveDraftPurchaseOrder;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Supplier\Models\Supplier;
@@ -15,7 +16,10 @@ use App\Domain\Tax\Models\TaxRate;
 use App\Domain\Tax\Models\TaxType;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Notifications\SendQueuedNotifications;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -71,9 +75,9 @@ final class PurchaseOrderApiTest extends TestCase
         ]);
     }
 
-    private function actor(array $permissions): User
+    private function actor(array $permissions, ?string $roleName = null): User
     {
-        $role = Role::findOrCreate('po_dynamic_test_'.(++$this->roleIndex), 'web');
+        $role = Role::findOrCreate($roleName ?? 'po_dynamic_test_'.(++$this->roleIndex), 'web');
         $role->syncPermissions($permissions);
         $user = User::factory()->create(['is_active' => true]);
         $user->assignRole($role);
@@ -135,16 +139,48 @@ final class PurchaseOrderApiTest extends TestCase
     {
         $maker = $this->actor(['po.create']);
         $this->signIn($maker);
-        $this->postJson('/api/v1/purchase-orders', $this->payload())
+        $response = $this->postJson('/api/v1/purchase-orders', $this->payload())
             ->assertCreated()
             ->assertJsonPath('data.status', 'draft')
             ->assertJsonPath('data.items.0.sku', 'PO-SKU-01')
             ->assertJsonPath('data.subtotal', '1000000.00')
             ->assertJsonPath('data.order', null);
+        $response->assertJsonPath('data.po_number', sprintf('PO-%06d', $response->json('data.id')));
         $this->assertDatabaseCount('purchase_orders', 1);
         $this->assertDatabaseCount('orders', 0);
         $this->assertSame('0.000', (string) $this->item->fresh()->stock_quantity);
         $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_staff_hr_can_save_edit_and_submit_po_with_names_and_no_employee_link(): void
+    {
+        $maker = $this->actor(['po.view', 'po.create', 'po.update', 'po.submit'], 'staff_hr');
+        $this->signIn($maker);
+        $this->assertNull($maker->employee()->first());
+        $payload = $this->payload();
+        unset($payload['requested_for_employee_id'], $payload['requested_for_department_id']);
+        $payload['requested_for_employee_name'] = '  Pemohon   Lepas  ';
+        $payload['requested_for_department_name'] = 'Tim Fasilitas';
+
+        $id = $this->postJson('/api/v1/purchase-orders', $payload)->assertCreated()
+            ->assertJsonPath('data.requested_for_employee_id', null)
+            ->assertJsonPath('data.requested_for_department_id', null)
+            ->assertJsonPath('data.requested_for_employee_name', 'Pemohon Lepas')
+            ->assertJsonPath('data.requested_for_department_name', 'Tim Fasilitas')
+            ->json('data.id');
+
+        $this->patchJson("/api/v1/purchase-orders/{$id}", ['requested_for_department_name' => 'Operasional Baru'])
+            ->assertOk()->assertJsonPath('data.requested_for_employee_name', 'Pemohon Lepas')
+            ->assertJsonPath('data.requested_for_department_name', 'Operasional Baru');
+        $this->postJson("/api/v1/purchase-orders/{$id}/submit")->assertOk()
+            ->assertJsonPath('data.status', 'pending_approval');
+
+        $this->getJson('/api/v1/purchase-orders/suggestions/employees?q=lepas')->assertOk()
+            ->assertJsonFragment(['name' => 'Pemohon Lepas', 'source' => 'history']);
+        $this->getJson('/api/v1/purchase-orders/suggestions/departments?q=operasional%20baru')->assertOk()
+            ->assertJsonFragment(['name' => 'Operasional Baru', 'source' => 'history']);
+        $this->assertDatabaseMissing('employees', ['name' => 'Pemohon Lepas']);
+        $this->assertDatabaseMissing('departments', ['name' => 'Operasional Baru']);
     }
 
     public function test_po_requires_at_least_one_item(): void
@@ -212,12 +248,12 @@ final class PurchaseOrderApiTest extends TestCase
             ->assertJsonPath('data.requires_gm_approval', false);
     }
 
-    public function test_below_twenty_million_needs_only_hr(): void
+    public function test_below_ten_million_needs_only_hr(): void
     {
         $maker = $this->actor(['po.submit']);
-        $hr = $this->actor(['po.approve.hr']);
-        $po = $this->draft($maker, '19999999.99');
-        $this->assertSame('20000000.00', $po->approval_threshold_amount);
+        $hr = $this->actor(['po.approve.hr'], 'hr');
+        $po = $this->draft($maker, '9999999.99');
+        $this->assertSame('10000000.00', $po->approval_threshold_amount);
         $this->assertFalse($po->requires_gm_approval);
 
         $this->submitAs($maker, $po);
@@ -228,11 +264,13 @@ final class PurchaseOrderApiTest extends TestCase
         $this->assertDatabaseCount('orders', 1);
     }
 
-    public function test_exactly_twenty_million_needs_only_hr_and_creates_one_order(): void
+    public function test_exactly_ten_million_needs_only_hr_and_creates_one_order(): void
     {
-        $maker = $this->actor(['po.submit']);
-        $hr = $this->actor(['po.approve.hr']);
-        $po = $this->draft($maker, '20000000.00');
+        Queue::fake([SendQueuedNotifications::class]);
+        $maker = $this->actor(['po.view', 'po.submit']);
+        $hr = $this->actor(['po.view', 'po.approve.hr'], 'hr');
+        $gm = $this->actor(['po.view', 'po.approve.gm'], 'general_manager');
+        $po = $this->draft($maker, '10000000.00');
         $this->submitAs($maker, $po);
         $this->assertDatabaseHas('purchase_orders', ['id' => $po->id, 'requires_gm_approval' => false]);
         $this->assertDatabaseCount('purchase_order_approvals', 1);
@@ -242,17 +280,20 @@ final class PurchaseOrderApiTest extends TestCase
         $this->assertDatabaseHas('purchase_orders', ['id' => $po->id, 'status' => 'approved']);
         $this->assertDatabaseHas('orders', ['purchase_order_id' => $po->id, 'status' => 'pending']);
         $this->assertDatabaseCount('orders', 1);
+        $this->assertSame('PO menunggu persetujuan HR', $hr->notifications()->sole()->data['title']);
+        $this->assertSame('PO disetujui', $maker->notifications()->sole()->data['title']);
+        $this->assertSame(0, $gm->notifications()->count());
     }
 
-    public function test_above_twenty_million_requires_hr_then_gm(): void
+    public function test_above_ten_million_requires_hr_then_gm(): void
     {
         $maker = $this->actor(['po.submit']);
-        $hr = $this->actor(['po.approve.hr']);
-        $gm = $this->actor(['po.approve.gm']);
-        $po = $this->draft($maker, '20000000.01');
+        $hr = $this->actor(['po.approve.hr'], 'hr');
+        $gm = $this->actor(['po.approve.gm'], 'general_manager');
+        $po = $this->draft($maker, '10000000.01');
         $this->submitAs($maker, $po);
         $this->assertDatabaseCount('purchase_order_approvals', 2);
-        $this->assertDatabaseHas('purchase_orders', ['id' => $po->id, 'requires_gm_approval' => true, 'approval_threshold_amount' => '20000000.00']);
+        $this->assertDatabaseHas('purchase_orders', ['id' => $po->id, 'requires_gm_approval' => true, 'approval_threshold_amount' => '10000000.00']);
 
         $this->signIn($gm);
         $this->postJson("/api/v1/purchase-orders/{$po->id}/approvals/gm/approve")
@@ -268,9 +309,122 @@ final class PurchaseOrderApiTest extends TestCase
         $this->assertDatabaseCount('orders', 1);
     }
 
+    public function test_gm_approval_list_and_detail_only_include_orders_with_a_gm_step(): void
+    {
+        Queue::fake([SendQueuedNotifications::class]);
+        $maker = $this->actor(['po.view', 'po.submit'], 'staff_hr');
+        $hr = $this->actor(['po.view', 'po.approve.hr'], 'hr');
+        $gm = $this->actor(['po.view', 'po.approve.gm'], 'general_manager');
+        $admin = $this->actor(['po.view'], 'super_admin');
+        $above = $this->draft($maker, '10000000.01');
+        $below = $this->draft($maker, '9999999.99');
+        $atLimit = $this->draft($maker, '10000000.00');
+        $draft = $this->draft($maker, '11000000.00');
+        foreach ([$above, $below, $atLimit] as $po) {
+            $this->submitAs($maker, $po);
+        }
+
+        $this->getJson('/api/v1/purchase-orders/approvals')->assertForbidden();
+        $this->getJson("/api/v1/purchase-orders/{$draft->id}")->assertOk();
+
+        foreach ([$hr, $admin] as $approver) {
+            $this->signIn($approver);
+            $this->getJson('/api/v1/purchase-orders/approvals')->assertOk()->assertJsonCount(3, 'data')
+                ->assertJsonPath('data.0.id', $atLimit->id)
+                ->assertJsonPath('data.1.id', $below->id)
+                ->assertJsonPath('data.2.id', $above->id);
+        }
+
+        $this->signIn($gm);
+        foreach (['/api/v1/purchase-orders/approvals', '/api/v1/purchase-orders'] as $path) {
+            $this->getJson($path.'?per_page=1')->assertOk()
+                ->assertJsonPath('data.0.id', $above->id)
+                ->assertJsonPath('meta.pagination.total', 1);
+        }
+        $this->getJson("/api/v1/purchase-orders/{$above->id}")->assertOk();
+        foreach ([$below, $atLimit, $draft] as $po) {
+            $this->getJson("/api/v1/purchase-orders/{$po->id}")->assertNotFound();
+        }
+    }
+
+    public function test_approval_alerts_follow_the_active_step_and_inboxes_are_private(): void
+    {
+        Queue::fake([SendQueuedNotifications::class]);
+        $maker = $this->actor(['po.view', 'po.submit'], 'staff_hr');
+        $hr = $this->actor(['po.view', 'po.approve.hr'], 'hr');
+        $gm = $this->actor(['po.view', 'po.approve.gm'], 'general_manager');
+        $po = $this->draft($maker, '10000000.01');
+
+        $this->submitAs($maker, $po);
+        $this->submitAs($maker, $po);
+        $this->signIn($hr);
+        $hrNotice = $this->getJson('/api/v1/notifications')->assertOk()
+            ->assertJsonPath('data.unread_count', 1)
+            ->assertJsonCount(1, 'data.notifications')
+            ->assertJsonPath('data.notifications.0.title', 'PO menunggu persetujuan HR')
+            ->assertJsonPath('data.notifications.0.purchase_order_id', $po->id)
+            ->assertJsonPath('data.notifications.0.target', 'approvals')
+            ->json('data.notifications.0.id');
+        $this->signIn($gm);
+        $this->getJson('/api/v1/notifications')->assertOk()->assertJsonCount(0, 'data.notifications');
+        $this->patchJson("/api/v1/notifications/{$hrNotice}/read")->assertNotFound();
+        Queue::assertNotPushed(SendQueuedNotifications::class, fn ($job): bool => $job->notifiables->first()->is($gm));
+
+        $this->approveAs($hr, $po, 'hr');
+        $this->approveAs($hr, $po, 'hr');
+        $this->patchJson("/api/v1/notifications/{$hrNotice}/read")->assertOk();
+        $this->getJson('/api/v1/notifications')->assertOk()->assertJsonPath('data.unread_count', 0);
+        $this->assertSame('PO disetujui HR', $maker->notifications()->sole()->data['title']);
+        $this->assertSame('PO menunggu persetujuan GM', $gm->notifications()->sole()->data['title']);
+        $this->assertCount(1, Queue::pushed(
+            SendQueuedNotifications::class,
+            fn ($job): bool => $job->notifiables->first()->is($hr) && $job->channels === ['mail'],
+        ));
+        $this->assertCount(1, Queue::pushed(
+            SendQueuedNotifications::class,
+            fn ($job): bool => $job->notifiables->first()->is($gm) && $job->channels === ['mail'],
+        ));
+
+        $this->approveAs($gm, $po, 'gm');
+        $this->approveAs($gm, $po, 'gm');
+        $this->signIn($maker);
+        $this->getJson('/api/v1/notifications')->assertOk()->assertJsonPath('data.unread_count', 2)
+            ->assertJsonFragment(['title' => 'PO disetujui', 'target' => 'purchase-orders']);
+        $this->assertCount(2, Queue::pushed(
+            SendQueuedNotifications::class,
+            fn ($job): bool => $job->notifiables->first()->is($maker) && $job->channels === ['mail'],
+        ));
+        $this->patchJson('/api/v1/notifications/read-all')->assertOk();
+        $this->getJson('/api/v1/notifications')->assertOk()->assertJsonPath('data.unread_count', 0)
+            ->assertJsonCount(2, 'data.notifications');
+        $this->assertSame(1, $gm->unreadNotifications()->count());
+    }
+
+    public function test_rolled_back_po_transition_leaves_no_notification_or_email_job(): void
+    {
+        Queue::fake([SendQueuedNotifications::class]);
+        $maker = $this->actor(['po.submit']);
+        $hr = $this->actor(['po.view', 'po.approve.hr'], 'hr');
+        $po = $this->draft($maker);
+        $rollback = new \RuntimeException('Batalkan transaksi uji');
+
+        try {
+            DB::transaction(function () use ($po, $maker, $rollback): void {
+                app(PurchaseOrderWorkflow::class)->submit($po, $maker);
+                throw $rollback;
+            });
+        } catch (\RuntimeException $error) {
+            $this->assertSame($rollback, $error);
+        }
+
+        $this->assertSame('draft', $po->fresh()->status);
+        $this->assertSame(0, $hr->notifications()->count());
+        Queue::assertNothingPushed();
+    }
+
     public function test_creator_cannot_approve_own_po_even_with_permission(): void
     {
-        $maker = $this->actor(['po.submit', 'po.approve.hr']);
+        $maker = $this->actor(['po.submit', 'po.approve.hr'], 'hr');
         $po = $this->draft($maker);
         $this->submitAs($maker, $po);
         $this->postJson("/api/v1/purchase-orders/{$po->id}/approvals/hr/approve")
@@ -278,12 +432,37 @@ final class PurchaseOrderApiTest extends TestCase
         $this->assertDatabaseHas('purchase_order_approvals', ['purchase_order_id' => $po->id, 'status' => 'pending']);
     }
 
+    public function test_approver_can_see_requesting_employee_and_department_in_list_and_detail(): void
+    {
+        $maker = $this->actor(['po.submit']);
+        $approver = $this->actor(['po.view', 'po.approve.hr'], 'hr');
+        $po = $this->draft($maker);
+        $this->submitAs($maker, $po);
+
+        $employeeName = $this->employee->name;
+        $departmentName = $this->department->name;
+        $newDepartment = Department::query()->create(['code' => 'PO-NEW-DEPT', 'name' => 'Departemen Baru', 'is_active' => true]);
+        $this->employee->update(['department_id' => $newDepartment->id, 'name' => 'Nama Karyawan Baru']);
+        $this->department->update(['name' => 'Nama Departemen Baru']);
+
+        $this->signIn($approver);
+        $this->getJson('/api/v1/purchase-orders/approvals?status=pending_approval')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $po->id)
+            ->assertJsonPath('data.0.requested_for_employee_name', $employeeName)
+            ->assertJsonPath('data.0.requested_for_department_name', $departmentName);
+        $this->getJson("/api/v1/purchase-orders/{$po->id}")
+            ->assertOk()
+            ->assertJsonPath('data.requested_for_employee_name', $employeeName)
+            ->assertJsonPath('data.requested_for_department_name', $departmentName);
+    }
+
     public function test_approval_responses_include_reviewer_names(): void
     {
         $maker = $this->actor(['po.submit', 'po.view']);
-        $hr = $this->actor(['po.approve.hr']);
-        $gm = $this->actor(['po.approve.gm']);
-        $po = $this->draft($maker, '20000000.01');
+        $hr = $this->actor(['po.approve.hr'], 'hr');
+        $gm = $this->actor(['po.approve.gm'], 'general_manager');
+        $po = $this->draft($maker, '10000000.01');
 
         $this->signIn($maker);
         $this->postJson("/api/v1/purchase-orders/{$po->id}/submit")
@@ -315,10 +494,23 @@ final class PurchaseOrderApiTest extends TestCase
             ->assertJsonPath('data.0.approvals.1.decided_by_name', $gm->name);
     }
 
+    public function test_staff_hr_cannot_decide_po_even_with_an_approval_permission(): void
+    {
+        $maker = $this->actor(['po.submit']);
+        $staff = $this->actor(['po.view', 'po.approve.hr', 'po.reject.hr'], 'staff_hr');
+        $po = $this->draft($maker);
+        $this->submitAs($maker, $po);
+
+        $this->signIn($staff);
+        $this->postJson("/api/v1/purchase-orders/{$po->id}/approvals/hr/approve")->assertForbidden();
+        $this->postJson("/api/v1/purchase-orders/{$po->id}/approvals/hr/reject", ['reason' => 'Alasan uji'])->assertForbidden();
+        $this->assertSame('pending_approval', $po->fresh()->status);
+    }
+
     public function test_user_without_hr_approval_permission_cannot_approve(): void
     {
         $maker = $this->actor(['po.submit']);
-        $unauthorized = $this->actor(['po.view']);
+        $unauthorized = $this->actor(['po.view'], 'hr');
         $po = $this->draft($maker);
         $this->submitAs($maker, $po);
         $this->signIn($unauthorized);
@@ -328,7 +520,7 @@ final class PurchaseOrderApiTest extends TestCase
     public function test_same_approval_replay_is_idempotent(): void
     {
         $maker = $this->actor(['po.submit']);
-        $hr = $this->actor(['po.approve.hr']);
+        $hr = $this->actor(['po.approve.hr'], 'hr');
         $po = $this->draft($maker);
         $this->submitAs($maker, $po);
         $this->submitAs($maker, $po); // replay submit, tidak membuat step kedua
@@ -355,21 +547,30 @@ final class PurchaseOrderApiTest extends TestCase
 
     public function test_hr_rejection_requires_reason_and_blocks_order(): void
     {
-        $maker = $this->actor(['po.submit']);
-        $hr = $this->actor(['po.reject.hr']);
-        $po = $this->draft($maker);
+        config(['mail.default' => 'array', 'queue.default' => 'sync', 'purchasing.frontend_url' => 'https://inventory.example.test']);
+        $maker = $this->actor(['po.view', 'po.submit']);
+        $hr = $this->actor(['po.view', 'po.reject.hr'], 'hr');
+        $gm = $this->actor(['po.view', 'po.approve.gm'], 'general_manager');
+        $po = $this->draft($maker, '10000000.01');
         $this->submitAs($maker, $po);
         $this->signIn($hr);
         $this->postJson("/api/v1/purchase-orders/{$po->id}/approvals/hr/reject", ['reason' => 'Tidak sesuai'])
             ->assertOk()->assertJsonPath('data.status', 'rejected')
             ->assertJsonPath('data.approvals.0.decided_by_name', $hr->name);
         $this->assertDatabaseCount('orders', 0);
+        $this->assertSame('Tidak sesuai', $maker->notifications()->sole()->data['reason']);
+        $this->assertSame(0, $gm->notifications()->count());
+        $messages = Mail::mailer('array')->getSymfonyTransport()->messages();
+        $mail = $messages->last()->getOriginalMessage();
+        $this->assertSame($maker->email, $mail->getTo()[0]->getAddress());
+        $this->assertSame('PO ditolak · '.$po->po_number, $mail->getSubject());
+        $this->assertStringContainsString('https://inventory.example.test/login?next=%2Fpurchase-orders%3Fpo%3D'.$po->id, $mail->getHtmlBody());
     }
 
     public function test_order_is_confirmed_when_supplier_confirms_and_stock_remains_unchanged(): void
     {
         $maker = $this->actor(['po.submit', 'po.send', 'po.supplier-confirm']);
-        $hr = $this->actor(['po.approve.hr']);
+        $hr = $this->actor(['po.approve.hr'], 'hr');
         $po = $this->draft($maker);
         $this->submitAs($maker, $po);
         $this->approveAs($hr, $po, 'hr');
@@ -397,7 +598,7 @@ final class PurchaseOrderApiTest extends TestCase
     public function test_cancel_approved_po_also_cancels_order(): void
     {
         $maker = $this->actor(['po.submit', 'po.update']);
-        $hr = $this->actor(['po.approve.hr']);
+        $hr = $this->actor(['po.approve.hr'], 'hr');
         $po = $this->draft($maker);
         $this->submitAs($maker, $po);
         $this->approveAs($hr, $po, 'hr');
@@ -410,7 +611,7 @@ final class PurchaseOrderApiTest extends TestCase
     public function test_draft_can_be_soft_deleted_but_approved_cannot(): void
     {
         $maker = $this->actor(['po.submit', 'po.update']);
-        $hr = $this->actor(['po.approve.hr']);
+        $hr = $this->actor(['po.approve.hr'], 'hr');
         $unused = $this->draft($maker);
         $this->signIn($maker);
         $this->deleteJson("/api/v1/purchase-orders/{$unused->id}")->assertOk();
@@ -445,8 +646,8 @@ final class PurchaseOrderApiTest extends TestCase
     public function test_hr_and_gm_steps_cannot_be_decided_by_same_person(): void
     {
         $maker = $this->actor(['po.submit']);
-        $both = $this->actor(['po.approve.hr', 'po.approve.gm']);
-        $po = $this->draft($maker, '20000000.01');
+        $both = $this->actor(['po.approve.hr', 'po.approve.gm'], 'super_admin');
+        $po = $this->draft($maker, '10000000.01');
         $this->submitAs($maker, $po);
         $this->approveAs($both, $po, 'hr');
         $this->signIn($both);
@@ -463,6 +664,6 @@ final class PurchaseOrderApiTest extends TestCase
         $this->supplier->update(['name' => 'Nama Baru', 'normalized_name' => 'nama baru']);
         $this->signIn($maker);
         $this->getJson("/api/v1/purchase-orders/{$po->id}")
-            ->assertOk()->assertJsonPath('data.supplier_name_snapshot','Supplier Uji');
+            ->assertOk()->assertJsonPath('data.supplier_name_snapshot', 'Supplier Uji');
     }
 }

@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui/Icon";
 import { navigation } from "@/features/dashboard/constants/navigation";
 import { useSession } from "@/features/auth/Session";
 import { api } from "@/lib/api";
+import { NotificationMenu } from "./NotificationMenu";
 
 export function TopNav({ onMenu }: { onMenu: () => void }) {
   const path = usePathname();
@@ -45,6 +46,7 @@ export function TopNav({ onMenu }: { onMenu: () => void }) {
   return <header className="topnav">
     <div className="breadcrumb"><button className="icon-button mobile-menu" onClick={onMenu} aria-label="Buka menu"><Icon name="menu"/></button><span>Workspace</span><Icon name="chevron" size={14}/><strong>{title}</strong></div>
     <div className="topnav-actions">
+      {user.permissions.includes("po.view") && <NotificationMenu key={user.id}/>}
       <details className="account-menu" ref={menu} onKeyDown={event => {
         if (event.key === "Escape" && event.currentTarget.open) {
           event.preventDefault();

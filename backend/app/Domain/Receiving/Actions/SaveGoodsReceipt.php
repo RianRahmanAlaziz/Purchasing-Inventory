@@ -8,6 +8,7 @@ use App\Domain\Purchasing\Models\Order;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Receiving\Exceptions\GoodsReceiptConflict;
 use App\Domain\Receiving\Models\GoodsReceipt;
+use App\Support\ShortReference;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -31,6 +32,7 @@ final class SaveGoodsReceipt
                 'status' => 'pending',
                 'notes' => $data['notes'] ?? null,
             ]);
+            ShortReference::assign($grn, 'grn_number', 'GRN');
             $grn->items()->createMany($this->formatLines($data['items']));
 
             return $this->loaded($grn);

@@ -10,12 +10,23 @@ export type PoSuggestion = {
   unit_price?: string; category_id?: number;
 };
 type Props = {
-  label: string; ariaLabel?: string; value: string; kind: "suppliers" | "items"; disabled?: boolean;
+  label: string; ariaLabel?: string; value: string; kind: "suppliers" | "items" | "employees" | "departments"; disabled?: boolean;
   onChange: (value: string) => void; onSelect: (option: PoSuggestion) => void;
 };
 
-function caption(option: PoSuggestion) {
-  if (option.source === "master") return "Master supplier" + (option.code ? " · " + option.code : "");
+const placeholders: Record<Props["kind"], string> = {
+  suppliers: "Ketik nama supplier",
+  items: "Ketik nama barang atau SKU",
+  employees: "Ketik nama karyawan",
+  departments: "Ketik nama departemen",
+};
+
+function caption(option: PoSuggestion, kind: Props["kind"]) {
+  if (option.source === "master") {
+    if (kind === "employees") return "Data karyawan";
+    if (kind === "departments") return "Data departemen";
+    return "Master supplier" + (option.code ? " · " + option.code : "");
+  }
   if (option.source === "history" && !option.sku) return "Riwayat PO" + (option.address ? " · " + option.address.replace(/\s+/g, " ") : "");
   const stock = option.stock_quantity !== undefined
     ? "Stok " + formatQuantity(option.stock_quantity) + " " + (option.unit ?? "") : "";
@@ -99,7 +110,7 @@ export function PoAutocomplete({ label, ariaLabel, value, kind, disabled, onChan
       aria-expanded={open} aria-controls={open ? listId : undefined}
       aria-activedescendant={open && active >= 0 ? listId + "-" + active : undefined}
       required maxLength={200} disabled={disabled} autoComplete="off" value={value}
-      placeholder={kind === "suppliers" ? "Ketik nama supplier" : "Ketik nama barang atau SKU"}
+      placeholder={placeholders[kind]}
       onFocus={() => setFocused(true)} onClick={() => setFocused(true)} onBlur={() => setFocused(false)}
       onKeyDown={keyDown} onChange={event => {
         onChange(event.target.value); setFocused(true); setSelection({ query: event.target.value, index: -1 });
@@ -111,7 +122,7 @@ export function PoAutocomplete({ label, ariaLabel, value, kind, disabled, onChan
           id={listId + "-" + index} key={option.id + "|" + option.name + "|" + (option.unit ?? "")}
           aria-selected={index === active} className="po-suggestion"
           onPointerDown={event => event.preventDefault()} onClick={() => choose(option)}>
-          <strong>{option.name}</strong><small>{caption(option)}</small>
+          <strong>{option.name}</strong><small>{caption(option, kind)}</small>
         </button>)
         : <p role="status">Belum ada kecocokan. Nama baru tetap dapat digunakan.</p>}
     </div>}

@@ -1,3 +1,4 @@
+import type { ButtonVariant } from "@/components/ui/Button";
 import type { ApiUser } from "@/lib/api";
 import { workspaceToday } from "@/lib/export-period";
 
@@ -32,11 +33,12 @@ export type Field = {
 export type Column = {
   label: string;
   key: string;
-  format?: "date" | "datetime" | "money" | "quantity" | "status";
+  format?: "date" | "datetime" | "money" | "quantity" | "status" | "effective-tax-rate";
 };
 
 export type Operation = {
   label: string;
+  variant?: ButtonVariant;
   permission?: string;
   suffix?: string;
   method?: "POST" | "DELETE";
@@ -46,6 +48,7 @@ export type Operation = {
 
 export type ApiModule = {
   endpoint: string;
+  listEndpoint?: string;
   title: string;
   description: string;
   columns: Column[];
@@ -53,6 +56,7 @@ export type ApiModule = {
   status?: string;
   details?: Column[];
   loadDetail?: boolean;
+  adminEditAndRemoveOnly?: boolean;
   groups?: { key: string; title: string; columns: Column[] }[];
   fields?: Field[];
   lines?: { fields: Field[]; limit: number };
@@ -64,7 +68,6 @@ export type ApiModule = {
   edit?: (row: Row) => boolean;
   remove?: (row: Row) => boolean;
   operations?: (row: Row, user: ApiUser) => Operation[];
-  filter?: (row: Row) => boolean;
   print?: boolean;
 };
 

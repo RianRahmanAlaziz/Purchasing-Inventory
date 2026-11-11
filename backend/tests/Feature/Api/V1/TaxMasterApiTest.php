@@ -7,8 +7,10 @@ namespace Tests\Feature\Api\V1;
 use App\Domain\Tax\Models\TaxRate;
 use App\Domain\Tax\Models\TaxType;
 use App\Models\User;
+use Database\Seeders\PpnIndonesia2026Seeder;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -18,6 +20,8 @@ use Tests\TestCase;
 final class TaxMasterApiTest extends TestCase
 {
     use DatabaseTransactions;
+
+    private const REFNUSA = 'https://refnusa.dev/v1/tax-rates?category=ppn';
 
     protected function setUp(): void
     {
@@ -39,7 +43,7 @@ final class TaxMasterApiTest extends TestCase
 
     private function actingWith(array $permissions): User
     {
-        $role = Role::findOrCreate('tax_master_test_role', 'web');
+        $role = Role::findOrCreate('super_admin', 'web');
         $role->syncPermissions($permissions);
 
         $user = User::factory()->create(['is_active' => true]);
@@ -89,6 +93,7 @@ final class TaxMasterApiTest extends TestCase
         $this->getJson('/api/v1/tax-types')->assertUnauthorized();
         $this->getJson('/api/v1/tax-rates')->assertUnauthorized();
         $this->getJson('/api/v1/taxes/options')->assertUnauthorized();
+        $this->postJson('/api/v1/tax-rates/import/refnusa')->assertUnauthorized();
     }
 
     public function test_role_without_permission_cannot_access_tax_master(): void
@@ -109,6 +114,112 @@ final class TaxMasterApiTest extends TestCase
             ->assertJsonPath('data.rate_percent', '11.0000');
         $this->postJson('/api/v1/tax-types', [])->assertForbidden();
         $this->deleteJson('/api/v1/tax-rates/'.$rate->id)->assertForbidden();
+        Http::preventStrayRequests()->fake();
+        $this->postJson('/api/v1/tax-rates/import/refnusa')->assertForbidden();
+        Http::assertNothingSent();
+    }
+
+    public function test_imported_ppn_is_inactive_until_reviewed_and_can_be_reimported(): void
+    {
+        $this->actingWith(['taxes.view', 'taxes.manage']);
+        Http::preventStrayRequests()->fake([
+            self::REFNUSA => Http::response(['rates' => $this->refnusaPpnRates()]),
+        ]);
+
+        $this->postJson('/api/v1/tax-rates/import/refnusa')->assertOk()
+            ->assertJsonPath('data.imported', 1)->assertJsonPath('data.skipped', 0);
+
+        $this->assertDatabaseMissing('tax_types', ['code' => 'PPN_MEWAH']);
+        $reduced = TaxType::query()->where('code', 'PPN_NON_MEWAH')->firstOrFail();
+        $reducedRate = $reduced->rates()->sole();
+        $this->assertFalse($reduced->is_active);
+        $this->assertFalse($reducedRate->is_active);
+        $this->assertSame('12.0000', $reducedRate->rate_percent);
+        $this->assertSame('0.91666667', $reducedRate->taxable_base_factor);
+        $this->assertSame('2025-01-01', $reducedRate->effective_from->format('Y-m-d'));
+        $this->getJson('/api/v1/taxes/options?date=2025-01-01')->assertOk()
+            ->assertJsonMissing(['label' => $reducedRate->label]);
+
+        $this->patchJson('/api/v1/tax-types/'.$reduced->id, ['is_active' => true])->assertOk();
+        $this->patchJson('/api/v1/tax-rates/'.$reducedRate->id, [
+            'is_active' => true, 'label' => 'PPN sudah ditinjau',
+        ])->assertOk();
+        $this->postJson('/api/v1/tax-rates/import/refnusa')->assertOk()
+            ->assertJsonPath('data.imported', 0)->assertJsonPath('data.skipped', 1);
+
+        $this->assertSame(1, $reduced->rates()->count());
+        $this->getJson('/api/v1/taxes/options?date=2025-01-01')->assertOk()
+            ->assertJsonFragment(['label' => 'PPN sudah ditinjau', 'is_active' => true]);
+    }
+
+    public function test_import_rejects_unavailable_or_incomplete_source_without_changes(): void
+    {
+        $this->actingWith(['taxes.manage']);
+        Http::preventStrayRequests()->fake([
+            self::REFNUSA => Http::sequence()->pushStatus(429)->push(['rates' => [$this->refnusaPpnRates()[0]]]),
+        ]);
+
+        $this->postJson('/api/v1/tax-rates/import/refnusa')->assertStatus(502);
+        $this->postJson('/api/v1/tax-rates/import/refnusa')->assertStatus(502);
+        $this->assertDatabaseMissing('tax_types', ['code' => 'PPN_MEWAH']);
+        $this->assertDatabaseMissing('tax_types', ['code' => 'PPN_NON_MEWAH']);
+    }
+
+    public function test_import_rolls_back_if_a_type_code_is_used_for_withholding(): void
+    {
+        $this->actingWith(['taxes.manage']);
+        $conflict = $this->type('PPN_NON_MEWAH');
+        $conflict->update(['direction' => 'withholding']);
+        Http::preventStrayRequests()->fake([
+            self::REFNUSA => Http::response(['rates' => $this->refnusaPpnRates()]),
+        ]);
+
+        $this->postJson('/api/v1/tax-rates/import/refnusa')->assertConflict();
+        $this->assertDatabaseMissing('tax_types', ['code' => 'PPN_MEWAH']);
+        $this->assertSame('withholding', $conflict->refresh()->direction);
+        $this->assertSame(0, $conflict->rates()->count());
+    }
+
+    public function test_2026_ppn_seed_enables_only_office_ppn_and_preserves_edits(): void
+    {
+        $this->actingWith(['taxes.view']);
+
+        $this->seed(PpnIndonesia2026Seeder::class);
+
+        $this->assertDatabaseCount('tax_types', 1);
+        $this->assertDatabaseCount('tax_rates', 1);
+        $this->getJson('/api/v1/taxes/options?date=2026-11-11')->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.tax_type.code', 'PPN_NON_MEWAH')
+            ->assertJsonPath('data.0.rate_percent', '12.0000')
+            ->assertJsonPath('data.0.taxable_base_factor', '0.91666667');
+
+        $existing = TaxRate::query()->sole();
+        $existing->update(['label' => 'Tarif PPN yang sudah diperiksa', 'is_active' => false]);
+        $this->seed(PpnIndonesia2026Seeder::class);
+
+        $this->assertDatabaseCount('tax_types', 1);
+        $this->assertDatabaseCount('tax_rates', 1);
+        $this->assertDatabaseHas('tax_rates', [
+            'id' => $existing->id,
+            'label' => 'Tarif PPN yang sudah diperiksa',
+            'is_active' => false,
+        ]);
+    }
+
+    private function refnusaPpnRates(): array
+    {
+        $reference = [
+            'category' => 'ppn',
+            'unit' => 'percent',
+            'effective_date' => '2025-01-01',
+            'source_url' => 'https://jdih.kemenkeu.go.id/api/download/ad276b82-94bd-4197-b409-af33e2842cd6/2024pmkeuangan131.pdf',
+        ];
+
+        return [
+            $reference + ['rate_code' => 'ppn_rate', 'value' => 12],
+            $reference + ['rate_code' => 'ppn_non_mewah_effective', 'value' => 11],
+        ];
     }
 
     public function test_manager_can_create_normalized_active_tax_type(): void
@@ -176,15 +287,18 @@ final class TaxMasterApiTest extends TestCase
             ->assertJsonPath('data.tax_type.direction', 'addition');
     }
 
-    public function test_rate_defaults_to_active_and_factor_one(): void
+    public function test_rate_can_be_created_without_dates_and_defaults_to_local_today(): void
     {
         $this->actingWith(['taxes.manage']);
+        $this->travelTo(now('UTC')->setDate(2026, 11, 10)->setTime(17, 30));
         $type = $this->type();
         $payload = $this->ratePayload($type);
-        unset($payload['taxable_base_factor']);
+        unset($payload['taxable_base_factor'], $payload['effective_from'], $payload['effective_until']);
         $this->postJson('/api/v1/tax-rates', $payload)->assertCreated()
             ->assertJsonPath('data.is_active', true)
-            ->assertJsonPath('data.taxable_base_factor', '1.00000000');
+            ->assertJsonPath('data.taxable_base_factor', '1.00000000')
+            ->assertJsonPath('data.effective_from', '2026-11-11')
+            ->assertJsonPath('data.effective_until', null);
     }
 
     public function test_overlapping_active_rate_is_rejected_with_409(): void

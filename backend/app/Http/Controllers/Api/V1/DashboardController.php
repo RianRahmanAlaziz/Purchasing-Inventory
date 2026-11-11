@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Domain\Item\Models\Item;
 use App\Domain\Reporting\Services\DashboardActivityService;
 use App\Domain\Reporting\Services\DashboardReportService;
 use App\Http\Controllers\Controller;
@@ -11,7 +12,6 @@ use App\Http\Requests\V1\Reporting\DashboardFilterRequest;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 final class DashboardController extends Controller
@@ -48,26 +48,25 @@ final class DashboardController extends Controller
             'per_page' => ['sometimes', 'integer', 'between:1,100'],
         ]);
 
-        $query = DB::table('items AS i')
-            ->join('categories AS c', 'c.id', '=', 'i.category_id')
-            ->where('i.is_active', true)
-            ->whereColumn('i.stock_quantity', '<=', 'i.minimum_stock');
+        $query = Item::query()->inInventory()->lowStock()->toBase()
+            ->join('categories AS c', 'c.id', '=', 'items.category_id')
+            ->where('items.is_active', true);
 
         if (isset($filters['category_id'])) {
-            $query->where('i.category_id', $filters['category_id']);
+            $query->where('items.category_id', $filters['category_id']);
         }
         if (isset($filters['search'])) {
             $search = trim($filters['search']);
             $query->where(function ($q) use ($search): void {
-                $q->where('i.sku', 'like', '%'.$search.'%')
-                    ->orWhere('i.name', 'like', '%'.$search.'%');
+                $q->where('items.sku', 'like', '%'.$search.'%')
+                    ->orWhere('items.name', 'like', '%'.$search.'%');
             });
         }
 
-        $page = $query->orderBy('i.name')->orderBy('i.id')
+        $page = $query->orderBy('items.name')->orderBy('items.id')
             ->paginate((int) ($filters['per_page'] ?? 15), [
-                'i.id', 'i.category_id', 'c.name AS category_name',
-                'i.sku', 'i.name', 'i.unit', 'i.stock_quantity', 'i.minimum_stock',
+                'items.id', 'items.category_id', 'c.name AS category_name',
+                'items.sku', 'items.name', 'items.unit', 'items.stock_quantity', 'items.minimum_stock',
             ]);
 
         return ApiResponse::success(

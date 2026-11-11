@@ -69,6 +69,10 @@ final class StockService
                     return $this->replayOrConflict($prior, $fingerprint);
                 }
 
+                if ($item->awaiting_first_receipt) {
+                    throw new StockConflictException('Barang dari PO menunggu konfirmasi penerimaan pertama.');
+                }
+
                 $before = StockDecimal::parse((string) $item->stock_quantity);
 
                 if ($before !== $expected) {
@@ -262,6 +266,9 @@ final class StockService
 
         if ($lastPurchasePrice !== null) {
             $updates['last_purchase_price'] = $lastPurchasePrice;
+        }
+        if ($type === 'grn_in') {
+            $updates['awaiting_first_receipt'] = false;
         }
 
         DB::table('items')->where('id', $item->id)->update($updates);

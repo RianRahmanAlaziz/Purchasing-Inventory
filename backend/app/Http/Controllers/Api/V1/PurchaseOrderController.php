@@ -22,12 +22,26 @@ final class PurchaseOrderController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        return $this->listOrders($request, approvalsOnly: false);
+    }
+
+    public function approvals(Request $request): JsonResponse
+    {
+        return $this->listOrders($request, approvalsOnly: true);
+    }
+
+    private function listOrders(Request $request, bool $approvalsOnly): JsonResponse
+    {
         $filter = $request->validate([
             'status' => ['sometimes', Rule::in(['draft', 'pending_approval', 'approved', 'sent', 'received_by_supplier', 'rejected', 'cancelled'])],
             'supplier_id' => ['sometimes', 'integer', Rule::exists('suppliers', 'id')],
             'per_page' => ['sometimes', 'integer', 'between:1,100'],
         ]);
-        $query = PurchaseOrder::query()->with(['items', 'taxes', 'approvals', 'order']);
+        $query = PurchaseOrder::query()->visibleTo($request->user())
+            ->with(['items', 'taxes', 'approvals', 'order', 'employee:id,name', 'department:id,name']);
+        if ($approvalsOnly) {
+            $query->has('approvals');
+        }
         if (isset($filter['status'])) {
             $query->where('status', $filter['status']);
         }
@@ -48,9 +62,13 @@ final class PurchaseOrderController extends Controller
         );
     }
 
-    public function show(Request $request, PurchaseOrder $purchaseOrder): JsonResponse
+    public function show(Request $request, string $purchaseOrder): JsonResponse
     {
-        return $this->respond($request, $purchaseOrder->load(['items', 'taxes', 'approvals', 'order', 'events']));
+        $po = PurchaseOrder::query()->visibleTo($request->user())
+            ->with(['items', 'taxes', 'approvals', 'order', 'events'])->find($purchaseOrder);
+        abort_if($po === null, 404, 'PO tidak ditemukan.');
+
+        return $this->respond($request, $po);
     }
 
     public function store(StorePurchaseOrderRequest $request, SaveDraftPurchaseOrder $action): JsonResponse
@@ -129,6 +147,8 @@ final class PurchaseOrderController extends Controller
 
     private function respond(Request $request, PurchaseOrder $po, string $message = 'PO berhasil diproses.', int $status = 200): JsonResponse
     {
+        $po->loadMissing(['employee:id,name', 'department:id,name']);
+
         return ApiResponse::success(
             data: (new PurchaseOrderResource($po))->toArray($request),
             message: $message,

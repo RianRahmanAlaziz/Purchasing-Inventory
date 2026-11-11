@@ -192,7 +192,7 @@ final class DistributionApiTest extends TestCase
         $response = $this->postJson('/api/v1/distributions', $this->payload())
             ->assertCreated()->assertJsonPath('data.status', 'requested');
         $this->assertSame($this->staff->id, $response->json('data.requested_by'));
-        $this->assertStringStartsWith('DIST-', $response->json('data.distribution_number'));
+        $response->assertJsonPath('data.distribution_number', sprintf('DIST-%06d', $response->json('data.id')));
         $this->assertDatabaseHas('distribution_events', ['distribution_id' => $response->json('data.id'), 'action' => 'requested']);
     }
 

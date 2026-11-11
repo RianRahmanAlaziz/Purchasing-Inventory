@@ -44,7 +44,7 @@ final class ItemApiTest extends TestCase
 
     private function actingWith(array $permissions): User
     {
-        $role = Role::findOrCreate('item_test_role', 'web');
+        $role = Role::findOrCreate('super_admin', 'web');
         $role->syncPermissions($permissions);
 
         $user = User::factory()->create(['is_active' => true]);

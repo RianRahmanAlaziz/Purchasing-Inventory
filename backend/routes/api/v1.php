@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\V1\GoodsReceiptController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\InvoiceController;
 use App\Http\Controllers\Api\V1\ItemController;
+use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\PermissionController;
@@ -32,6 +33,8 @@ use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\UserRoleController;
 use App\Http\Middleware\EnsureActiveAccount;
 use Illuminate\Support\Facades\Route;
+use Spatie\Permission\Middleware\PermissionMiddleware;
+use Spatie\Permission\Middleware\RoleMiddleware;
 
 Route::get('/health', HealthController::class)->name('health');
 
@@ -46,6 +49,14 @@ Route::prefix('auth')->group(function (): void {
 });
 
 Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function (): void {
+    $masterAccess = RoleMiddleware::using('super_admin');
+
+    Route::prefix('notifications')->name('notifications.')->group(function (): void {
+        Route::get('/', [NotificationController::class, 'index'])->name('index');
+        Route::patch('/read-all', [NotificationController::class, 'markAllRead'])->name('read-all');
+        Route::patch('/{notification}/read', [NotificationController::class, 'markRead'])->whereUuid('notification')->name('read');
+    });
+
     Route::prefix('authorization')->middleware('can:roles.manage')->group(function (): void {
         Route::get('/roles', [RoleController::class, 'index']);
         Route::post('/roles', [RoleController::class, 'store']);
@@ -97,7 +108,7 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         }
     });
 
-    Route::prefix('companies')->name('companies.')->group(function (): void {
+    Route::prefix('companies')->name('companies.')->middleware($masterAccess)->group(function (): void {
         Route::get('/', [CompanyController::class, 'index'])->middleware('can:companies.view')->name('index');
         Route::post('/', [CompanyController::class, 'store'])->middleware('can:companies.manage')->name('store');
         Route::get('/{company}', [CompanyController::class, 'show'])->whereNumber('company')->middleware('can:companies.view')->name('show');
@@ -114,7 +125,7 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
             Route::get('/low-stock', [DashboardController::class, 'lowStock'])->middleware('can:inventory.view')->name('low-stock');
         });
 
-    Route::prefix('departments')->name('departments.')->group(function (): void {
+    Route::prefix('departments')->name('departments.')->middleware($masterAccess)->group(function (): void {
         Route::get('/', [DepartmentController::class, 'index'])->middleware('can:departments.view')->name('index');
         Route::get('/{department}', [DepartmentController::class,  'show'])->middleware('can:departments.view')->name('show');
         Route::post('/', [DepartmentController::class, 'store'])->middleware('can:departments.manage')->name('store');
@@ -122,7 +133,7 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::delete('/{department}', [DepartmentController::class, 'destroy'])->middleware('can:departments.manage')->name('destroy');
     });
 
-    Route::prefix('employees')->name('employees.')->group(function (): void {
+    Route::prefix('employees')->name('employees.')->middleware($masterAccess)->group(function (): void {
         Route::get('/', [EmployeeController::class, 'index'])->middleware('can:employees.view')->name('index');
         Route::post('/', [EmployeeController::class, 'store'])->middleware('can:employees.manage')->name('store');
         Route::get('/{employee}', [EmployeeController::class, 'show'])->whereNumber('employee')->middleware('can:employees.view')->name('show');
@@ -130,7 +141,7 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::delete('/{employee}', [EmployeeController::class, 'destroy'])->whereNumber('employee')->middleware('can:employees.manage')->name('destroy');
     });
 
-    Route::prefix('suppliers')->name('suppliers.')->group(function (): void {
+    Route::prefix('suppliers')->name('suppliers.')->middleware($masterAccess)->group(function (): void {
         Route::get('/suggest', [SupplierController::class, 'suggest'])->middleware('can:suppliers.view')->name('suggest');
         Route::get('/', [SupplierController::class,  'index'])->middleware('can:suppliers.view')->name('index');
         Route::post('/', [SupplierController::class, 'store'])->middleware('can:suppliers.create')->name('store');
@@ -140,7 +151,7 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::delete('/{supplier}', [SupplierController::class,  'destroy'])->whereNumber('supplier')->middleware('can:suppliers.delete')->name('destroy');
     });
 
-    Route::prefix('categories')->name('categories.')->group(function (): void {
+    Route::prefix('categories')->name('categories.')->middleware($masterAccess)->group(function (): void {
         Route::get('/', [CategoryController::class,  'index'])->middleware('can:categories.view')->name('index');
         Route::post('/', [CategoryController::class,  'store'])->middleware('can:categories.manage')->name('store');
         Route::get('/{category}', [CategoryController::class,   'show'])->whereNumber('category')->middleware('can:categories.view')->name('show');
@@ -148,12 +159,13 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::delete('/{category}', [CategoryController::class, 'destroy'])->whereNumber('category')->middleware('can:categories.manage')->name('destroy');
     });
 
-    Route::prefix('items')->name('items.')->group(function (): void {
+    Route::prefix('items')->name('items.')->group(function () use ($masterAccess): void {
         Route::get('/', [ItemController::class, 'index'])->middleware('can:items.view')->name('index');
-        Route::post('/', [ItemController::class,  'store'])->middleware('can:items.manage')->name('store');
+        Route::post('/', [ItemController::class,  'store'])->name('store');
+        Route::get('/category-options', [CategoryController::class, 'itemOptions'])->name('category-options');
         Route::get('/{item}', [ItemController::class, 'show'])->whereNumber('item')->middleware('can:items.view')->name('show');
-        Route::patch('/{item}', [ItemController::class, 'update'])->whereNumber('item')->middleware('can:items.manage')->name('update');
-        Route::delete('/{item}', [ItemController::class, 'destroy'])->whereNumber('item')->middleware('can:items.manage')->name('destroy');
+        Route::patch('/{item}', [ItemController::class, 'update'])->whereNumber('item')->middleware([$masterAccess, 'can:items.manage'])->name('update');
+        Route::delete('/{item}', [ItemController::class, 'destroy'])->whereNumber('item')->middleware([$masterAccess, 'can:items.manage'])->name('destroy');
     });
 
     Route::post('/items/{item}/stock-adjustments', [StockAdjustmentController::class, 'store'])->whereNumber('item')->middleware('can:inventory.adjust')->name('inventory.adjustments.store');
@@ -163,7 +175,7 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
 
     Route::get('/taxes/options', TaxOptionController::class)->middleware('can:taxes.view')->name('taxes.options');
 
-    Route::prefix('tax-types')->name('tax-types.')->group(function (): void {
+    Route::prefix('tax-types')->name('tax-types.')->middleware($masterAccess)->group(function (): void {
         Route::get('/', [TaxTypeController::class, 'index'])->middleware('can:taxes.view')->name('index');
         Route::post('/', [TaxTypeController::class, 'store'])->middleware('can:taxes.manage')->name('store');
         Route::get('/{taxType}', [TaxTypeController::class, 'show'])->whereNumber('taxType')->middleware('can:taxes.view')->name('show');
@@ -171,21 +183,30 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::delete('/{taxType}', [TaxTypeController::class, 'destroy'])->whereNumber('taxType')->middleware('can:taxes.manage')->name('destroy');
     });
 
-    Route::prefix('tax-rates')->name('tax-rates.')->group(function (): void {
+    Route::prefix('tax-rates')->name('tax-rates.')->middleware($masterAccess)->group(function (): void {
         Route::get('/', [TaxRateController::class, 'index'])->middleware('can:taxes.view')->name('index');
         Route::post('/', [TaxRateController::class, 'store'])->middleware('can:taxes.manage')->name('store');
+        Route::post('/import/refnusa', [TaxRateController::class, 'importRefnusa'])->middleware('can:taxes.manage')->name('import.refnusa');
         Route::get('/{taxRate}', [TaxRateController::class, 'show'])->whereNumber('taxRate')->middleware('can:taxes.view')->name('show');
         Route::patch('/{taxRate}', [TaxRateController::class, 'update'])->whereNumber('taxRate')->middleware('can:taxes.manage')->name('update');
         Route::delete('/{taxRate}', [TaxRateController::class, 'destroy'])->whereNumber('taxRate')->middleware('can:taxes.manage')->name('destroy');
     });
 
     Route::prefix('purchase-orders')->name('purchase-orders.')->group(function (): void {
+        Route::get('/suggestions/companies', [CompanyController::class, 'index'])
+            ->middleware(['can:po.view', 'can:companies.view'])->name('suggestions.companies');
+        Route::middleware(['can:po.view', PermissionMiddleware::using(['po.create', 'po.update'])])->group(function (): void {
+            Route::get('/suggestions/employees', [PurchaseOrderSuggestionController::class, 'employees'])->name('suggestions.employees');
+            Route::get('/suggestions/departments', [PurchaseOrderSuggestionController::class, 'departments'])->name('suggestions.departments');
+        });
         Route::get('/suggestions/suppliers', [PurchaseOrderSuggestionController::class, 'suppliers'])
             ->middleware(['can:po.view', 'can:suppliers.view'])->name('suggestions.suppliers');
         Route::get('/suggestions/items', [PurchaseOrderSuggestionController::class, 'items'])
             ->middleware(['can:po.view', 'can:items.view'])->name('suggestions.items');
-        Route::get('/suggestions/categories', [PurchaseOrderSuggestionController::class, 'categories'])
+        Route::get('/suggestions/categories', [CategoryController::class, 'options'])
             ->middleware(['can:po.view', 'can:items.manage'])->name('suggestions.categories');
+        Route::get('/approvals', [PurchaseOrderController::class, 'approvals'])
+            ->middleware(['can:po.view', RoleMiddleware::using(['hr', 'general_manager', 'super_admin'])])->name('approvals.index');
         Route::get('/', [PurchaseOrderController::class, 'index'])->middleware('can:po.view')->name('index');
         Route::post('/', [PurchaseOrderController::class, 'store'])->middleware('can:po.create')->name('store');
         Route::get('/{purchaseOrder}', [PurchaseOrderController::class, 'show'])->whereNumber('purchaseOrder')->middleware('can:po.view')->name('show');
@@ -215,6 +236,7 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
     });
 
     Route::prefix('distributions')->name('distributions.')->group(function (): void {
+        Route::get('/recipients', [DistributionController::class, 'recipients'])->name('recipients');
         Route::get('/', [DistributionController::class, 'index'])->name('index');
         Route::post('/', [DistributionController::class, 'store'])->name('store');
 

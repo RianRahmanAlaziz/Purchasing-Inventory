@@ -92,7 +92,7 @@ function AuditTable({ revision }: { revision: number }) {
           <p>Sesudah</p><pre>{formatAudit(entry.after_data)}</pre>
         </details></td>
       </tr>)}</tbody>
-    </table></div> : <p className="loading-state">Belum ada perubahan yang tercatat.</p>}
+    </table></div> : <p className="empty-state">Belum ada perubahan yang tercatat.</p>}
     <div className="access-audit-pages">
       <Button variant="secondary" disabled={page <= 1} onClick={() => setPage(current => current - 1)}>Sebelumnya</Button>
       <span>Halaman {page} dari {log.lastPage ?? 1}</span>

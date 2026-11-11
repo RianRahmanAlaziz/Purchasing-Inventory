@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useSession } from "@/features/auth/Session";
+import { canAccessModule } from "@/features/dashboard/constants/navigation";
 import { useApiData } from "@/features/modules/hooks/useApiData";
 import { documentMoney } from "@/features/purchase-orders/utils/totals";
 import { formatQuantity } from "@/lib/quantity";
@@ -48,10 +49,16 @@ export function DashboardView() {
     {overview.error && <p className="form-error" role="alert">{overview.error}</p>}
     {overview.status === 403 && user.employee_id && <Link className="text-link" href="/distributions">Buka distribusi barang</Link>}
     {overview.data && <>
-      <div className="stats-grid">{stats.map(stat => stat && <Link className="stat-card" href={stat.href} key={stat.title}>
-        <div className="stat-top"><span>{stat.title}</span><span className={"stat-icon " + stat.tone}><Icon name={stat.icon} size={19}/></span></div>
-        <strong className="stat-value">{stat.value}</strong>
-      </Link>)}</div>
+      <div className="stats-grid">{stats.map(stat => {
+        if (!stat) return null;
+        const content = <>
+          <div className="stat-top"><span>{stat.title}</span><span className={"stat-icon " + stat.tone}><Icon name={stat.icon} size={19}/></span></div>
+          <strong className="stat-value">{stat.value}</strong>
+        </>;
+        return canAccessModule(user, stat.href.split("?")[0].slice(1))
+          ? <Link className="stat-card" href={stat.href} key={stat.title}>{content}</Link>
+          : <div className="stat-card" key={stat.title}>{content}</div>;
+      })}</div>
       {!Object.keys(section).length && <p className="form-hint">Belum ada ringkasan yang tersedia untuk akun ini.</p>}
       <div className="bottom-grid">
         {section.inventory && <section className="panel low-stock-panel">

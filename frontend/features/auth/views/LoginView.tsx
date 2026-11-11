@@ -3,11 +3,11 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
-import { workspaceHome } from "@/features/dashboard/constants/navigation";
+import { purchaseOrderHref, workspaceHome, type PurchaseOrderDestination } from "@/features/dashboard/constants/navigation";
 import { api, type ApiUser } from "@/lib/api";
 import "./login.css";
 
-export function LoginView() {
+export function LoginView({ destination }: { destination?: PurchaseOrderDestination }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
@@ -23,7 +23,7 @@ export function LoginView() {
       const { data: { user } } = await api<{ user: ApiUser }>("auth/login", {
         method: "POST", body: { email: email.trim(), password },
       });
-      window.location.replace(workspaceHome(user));
+      window.location.replace((destination && purchaseOrderHref(user, destination)) ?? workspaceHome(user));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Gagal masuk. Coba lagi.");
       setSubmitting(false);
