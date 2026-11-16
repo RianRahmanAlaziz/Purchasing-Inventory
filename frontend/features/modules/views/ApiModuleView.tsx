@@ -19,6 +19,7 @@ import { documentMoney } from "@/features/purchase-orders/utils/totals";
 import { ApiRecordEditor } from "../components/ApiRecordEditor";
 import { ApiPurchaseOrderPreview } from "@/features/purchase-orders/components/ApiPurchaseOrderPreview";
 import { CreateOrderModal } from "@/features/purchase-orders/components/CreateOrderModal";
+import { DistributionLetter } from "@/features/distributions/components/DistributionLetter";
 import { apiModules } from "../constants/apiModules";
 import { useApiData } from "../hooks/useApiData";
 import { datePart, get, records, type ApiModule, type Column, type Operation, type Row } from "../api-types";
@@ -32,13 +33,15 @@ const statuses: Record<string, string> = {
   requested: "Diminta", preparing: "Disiapkan", received_by_employee: "Diterima karyawan",
   adjustment: "Penyesuaian", grn_in: "Stok masuk", distribution_out: "Stok keluar",
   unpaid: "Belum dibayar", partially_paid: "Dibayar sebagian", paid: "Lunas", overdue: "Jatuh tempo",
-  pending_verification: "Menunggu verifikasi", verified: "Terverifikasi", not_uploaded: "Belum diunggah", uploaded: "Diunggah", received: "Diterima",
+  pending_verification: "Menunggu verifikasi", verified: "Terverifikasi", not_uploaded: "Belum diunggah", uploaded: "Sudah diunggah", received: "Diterima",
   addition: "Tambahan", withholding: "Potongan",
+  low_stock: "Stok menipis", normal_stock: "Tersedia", overstock: "Melebihi maksimum",
 };
 
 function statusText(value: unknown, field: string) {
   if (value == null) return "—";
   if (field === "is_low_stock") return value ? "Stok menipis" : "Tersedia";
+  if (field === "cancellation.status" && value === "pending") return "Menunggu HR";
   return statuses[String(value)] ?? String(value).replaceAll("_", " ");
 }
 
@@ -61,11 +64,11 @@ function text(row: Row, column: Column) {
 
 function Cell({ row, column }: { row: Row; column: Column }) {
   const value = get(row, column.key);
-  if (column.format !== "status") return <>{text(row, column)}</>;
+  if (column.format !== "status" || value == null) return <>{text(row, column)}</>;
   const tone = column.key === "is_low_stock" ? (value ? "amber" : "green")
-    : ["rejected", "cancelled", "discrepancy", false].includes(value as string | boolean) ? "red"
-    : ["pending", "pending_approval", "pending_verification", "requested", "preparing", "overdue", "unpaid"].includes(String(value)) ? "amber"
-    : ["approved", "completed", "fully_received", "received_by_employee", "verified", "paid", true].includes(value as string | boolean) ? "green" : "blue";
+    : ["rejected", "cancelled", "discrepancy", "overstock", false].includes(value as string | boolean) ? "red"
+    : ["pending", "pending_approval", "pending_verification", "requested", "preparing", "overdue", "unpaid", "low_stock", "not_uploaded"].includes(String(value)) ? "amber"
+    : ["approved", "completed", "fully_received", "received_by_employee", "verified", "paid", "normal_stock", "uploaded", true].includes(value as string | boolean) ? "green" : "blue";
   return <Badge tone={tone}>{text(row, column)}</Badge>;
 }
 
@@ -81,12 +84,25 @@ function Details({ row: summary, config, close, edit, act, preview }: {
   const canManage = !config.adminEditAndRemoveOnly || isSuperAdmin(user);
   const canEdit = canManage && config.mutations?.edit && user.permissions.includes(config.mutations.edit) && config.edit?.(row);
   const canRemove = canManage && config.mutations?.remove && user.permissions.includes(config.mutations.remove) && config.remove?.(row);
+  const cancellation = config.endpoint === "purchase-orders" ? get(row, "cancellation") : null;
   return <Modal title={"Detail " + config.title} className="order-editor-modal" onClose={close}>
     <div className="po-form-body">
       {detail.loading && <p className="form-hint" role="status">Memuat detail...</p>}
       {detail.error && <p className="form-error" role="alert">{detail.error}</p>}
       <div className="detail-grid">{[...config.columns, ...(config.details ?? [])].map(column =>
         <p key={column.key}>{column.label}<strong><Cell row={row} column={column}/></strong></p>)}</div>
+      {Boolean(cancellation) && <section>
+        <h3>Permintaan pembatalan</h3>
+        <div className="detail-grid">{([
+          { key: "cancellation.requested_by_name", label: "Pemohon pembatalan" },
+          { key: "cancellation.requested_at", label: "Waktu pengajuan", format: "datetime" },
+          { key: "cancellation.reason", label: "Alasan pembatalan" },
+          { key: "cancellation.decided_by_name", label: "Nama pemeriksa" },
+          { key: "cancellation.decided_at", label: "Waktu keputusan", format: "datetime" },
+          { key: "cancellation.rejection_reason", label: "Alasan penolakan" },
+        ] satisfies Column[]).filter(column => get(row, column.key) != null).map(column =>
+          <p key={column.key}>{column.label}<strong><Cell row={row} column={column}/></strong></p>)}</div>
+      </section>}
       {config.groups?.map(group => {
         const rows = records(row, group.key);
         return rows.length > 0 && <section key={group.key}>
@@ -100,8 +116,10 @@ function Details({ row: summary, config, close, edit, act, preview }: {
       })}
     </div>
     <div className="modal-actions api-actions">
-      {config.endpoint === "documents" && Boolean(row.file_name) && <a className="button secondary" href={"/api/documents/" + row.id + "/download"}>Unduh berkas</a>}
-      {config.print && Boolean(row.po_number) && <Button variant="secondary" onClick={() => preview(row)}>Surat PO</Button>}
+      {["documents", "invoices"].includes(config.endpoint) && Boolean(row.file_name) &&
+        <a className="button secondary" href={`/api/${config.endpoint}/${row.id}/download`}>Unduh berkas</a>}
+      {config.print && !detail.loading && !detail.error && config.print.available(row) &&
+        <Button variant="secondary" onClick={() => preview(row)}>{config.print.label}</Button>}
       {canEdit && <Button variant="secondary" onClick={() => edit(row)}>Edit</Button>}
       {canRemove && <Button variant="secondary" onClick={() => act({ label: "Hapus", method: "DELETE" }, row)}>Hapus</Button>}
       {operations.map(operation => <Button key={operation.suffix} variant={operation.variant ?? "secondary"} onClick={() => act(operation, row)}>{operation.label}</Button>)}
@@ -182,9 +200,10 @@ export function ApiModuleView({ slug }: { slug: string }) {
   const { data, loading, error } = useApiData<Row[]>(config.listEndpoint ?? config.endpoint, revision, true);
   const rows = data ?? [];
   const statusKey = config.status;
-  const choices = statusKey ? [...new Set(rows.map(row => String(get(row, statusKey))).concat(status ? [status] : []))] : [];
+  const statusValue = config.statusValue ?? (row => String(get(row, statusKey ?? "")));
+  const choices = statusKey ? [...new Set(rows.map(statusValue).concat(status ? [status] : []))] : [];
   const filtered = rows.filter(row =>
-    (!status || (statusKey && String(get(row, statusKey)) === status))
+    (!status || statusValue(row) === status)
     && config.columns.some(column => text(row, column).toLowerCase().includes(query.trim().toLowerCase())));
   const pagination = usePagination(filtered, JSON.stringify([slug, query, status]));
 
@@ -275,7 +294,8 @@ export function ApiModuleView({ slug }: { slug: string }) {
       preview={row => setSelection({ mode: "preview", row })}/>}
     {selection?.mode === "operation" && <OperationDialog row={selection.row} config={config} operation={selection.operation}
       close={() => setSelection({ mode: "detail", row: selection.row })} done={saved}/>}
-    {selection?.mode === "preview" && <ApiPurchaseOrderPreview row={selection.row}
-      close={() => setSelection({ mode: "detail", row: selection.row })}/>}
+    {selection?.mode === "preview" && (slug === "distributions"
+      ? <DistributionLetter row={selection.row} close={() => setSelection({ mode: "detail", row: selection.row })}/>
+      : <ApiPurchaseOrderPreview row={selection.row} close={() => setSelection({ mode: "detail", row: selection.row })}/>)}
   </>;
 }

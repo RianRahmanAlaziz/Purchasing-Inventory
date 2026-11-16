@@ -150,6 +150,34 @@ final class ItemApiTest extends TestCase
         ])->assertCreated()->assertJsonPath('data.is_active', false);
     }
 
+    public function test_stock_limits_and_reference_price_can_be_managed_without_changing_stock(): void
+    {
+        $this->actingWith(['items.view', 'items.manage']);
+        $payload = [
+            'category_id' => $this->category()->id, 'sku' => 'LIMIT-001', 'name' => 'Kertas A4', 'unit' => 'rim',
+            'minimum_stock' => '2.125', 'maximum_stock' => '10.250', 'reference_price' => '25000.50',
+        ];
+        $id = $this->postJson('/api/v1/items', $payload)->assertCreated()
+            ->assertJsonPath('data.minimum_stock', '2.125')->assertJsonPath('data.maximum_stock', '10.250')
+            ->assertJsonPath('data.reference_price', '25000.50')->assertJsonPath('data.last_purchase_price', '0.00')
+            ->assertJsonPath('data.stock_quantity', '0.000')->assertJsonPath('data.stock_level', 'low_stock')->json('data.id');
+
+        $this->patchJson("/api/v1/items/{$id}", ['minimum_stock' => '10.251'])->assertUnprocessable()
+            ->assertJsonValidationErrors('maximum_stock');
+        $this->patchJson("/api/v1/items/{$id}", ['maximum_stock' => '2.124', 'reference_price' => '-1'])->assertUnprocessable()
+            ->assertJsonValidationErrors('reference_price');
+        $this->patchJson("/api/v1/items/{$id}", ['maximum_stock' => '2.124'])->assertUnprocessable()
+            ->assertJsonValidationErrors('maximum_stock');
+        $this->patchJson("/api/v1/items/{$id}", ['reference_price' => '27500'])->assertOk()
+            ->assertJsonPath('data.reference_price', '27500.00')->assertJsonPath('data.maximum_stock', '10.250');
+
+        DB::table('items')->where('id', $id)->update(['stock_quantity' => '10.251']);
+        $this->getJson('/api/v1/items')->assertOk()->assertJsonPath('data.0.stock_level', 'overstock');
+        $this->patchJson("/api/v1/items/{$id}", ['maximum_stock' => null, 'reference_price' => null])->assertOk()
+            ->assertJsonPath('data.maximum_stock', null)->assertJsonPath('data.reference_price', null)
+            ->assertJsonPath('data.stock_level', 'normal_stock')->assertJsonPath('data.stock_quantity', '10.251');
+    }
+
     public function test_duplicate_sku_after_normalization_returns_422(): void
     {
         $this->actingWith(['items.manage']);

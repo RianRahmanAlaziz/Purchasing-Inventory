@@ -21,6 +21,7 @@ final class InvoiceResource extends JsonResource
             && $this->due_date->format('Y-m-d') < now('Asia/Bangkok')->format('Y-m-d');
 
         return ['id' => $this->id, 'invoice_number' => $this->invoice_number,
+            'upload_status' => $this->file_path !== null ? 'uploaded' : 'not_uploaded', 'file_name' => $this->file_name,
             'supplier_id' => $this->supplier_id, 'supplier_name' => $this->supplier?->name,
             'purchase_order_id' => $this->purchase_order_id, 'po_number' => $this->purchaseOrder?->po_number,
             'invoice_date' => $this->invoice_date?->format('Y-m-d'), 'due_date' => $this->due_date?->format('Y-m-d'),

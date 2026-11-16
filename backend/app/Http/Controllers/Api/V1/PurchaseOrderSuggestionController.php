@@ -65,7 +65,8 @@ final class PurchaseOrderSuggestionController extends Controller
             ->where(fn ($query) => $query->whereRaw("name LIKE ? ESCAPE '!'", [$pattern])->orWhereRaw("sku LIKE ? ESCAPE '!'", [$pattern]))
             ->orderBy('name')->orderBy('sku')->limit($limit)->get()->map(fn ($item): array => [
                 'id' => (int) $item->id, 'name' => $item->name, 'stock_name' => $item->name,
-                'sku' => $item->sku, 'unit' => $item->unit, 'unit_price' => (string) $item->last_purchase_price,
+                'sku' => $item->sku, 'unit' => $item->unit,
+                'unit_price' => (string) ($item->reference_price ?? $item->last_purchase_price),
                 'stock_quantity' => (string) $item->stock_quantity, 'category_id' => (int) $item->category_id, 'source' => 'stock',
             ])->all();
 

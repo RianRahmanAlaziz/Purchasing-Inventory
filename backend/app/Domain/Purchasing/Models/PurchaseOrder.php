@@ -19,6 +19,8 @@ final class PurchaseOrder extends Model
 {
     use SoftDeletes;
 
+    public const CANCELLABLE_STATUSES = ['draft', 'pending_approval', 'approved'];
+
     protected $fillable = [
         'po_number', 'supplier_id', 'requested_for_employee_id',
         'requested_for_department_id', 'created_by',
@@ -105,6 +107,21 @@ final class PurchaseOrder extends Model
     public function events(): HasMany
     {
         return $this->hasMany(PurchaseOrderEvent::class)->orderBy('id');
+    }
+
+    public function cancellations(): HasMany
+    {
+        return $this->hasMany(PurchaseOrderCancellation::class);
+    }
+
+    public function cancellation(): HasOne
+    {
+        return $this->hasOne(PurchaseOrderCancellation::class)->latestOfMany()->with(['requester:id,name', 'decider:id,name']);
+    }
+
+    public function hasPendingCancellation(): bool
+    {
+        return $this->cancellations()->where('status', 'pending')->exists();
     }
 
     public function order(): HasOne

@@ -103,7 +103,10 @@ final class ConnectedModulesTest extends TestCase
             ->assertJsonPath('data.total_amount', '38160.00')->assertJsonCount(1, 'data.taxes')
             ->assertJsonPath('data.taxes.0.tax_amount', '2160.00');
         $company->delete();
-        $this->getJson("/api/v1/purchase-orders/$id")->assertOk()->assertJsonPath('data.company_snapshot.name', 'PT Penerbit');
+        $this->getJson("/api/v1/purchase-orders/$id")->assertOk()->assertJsonPath('data.company_snapshot.name', 'PT Penerbit')
+            ->assertJsonPath('data.supplier_address', "Alamat tujuan\nJakarta");
+        DB::table('purchase_orders')->where('id', $id)->update(['supplier_address_snapshot' => null]);
+        $this->getJson("/api/v1/purchase-orders/$id")->assertOk()->assertJsonPath('data.supplier_address', 'Alamat master');
         $payload['items'][0]['unit'] = 'kg';
         $payload['company_id'] = null;
         $this->postJson('/api/v1/purchase-orders', $payload)->assertUnprocessable()->assertJsonValidationErrors('items');
@@ -119,6 +122,31 @@ final class ConnectedModulesTest extends TestCase
             'invoice_date' => '2026-11-05', 'total_amount' => '1000.00'])->assertUnprocessable();
         $this->deleteJson("/api/v1/invoices/$id")->assertOk();
         $this->getJson("/api/v1/invoices/$id")->assertNotFound();
+    }
+
+    public function test_invoice_upload_status_tracks_its_private_attachment_independently_from_payment(): void
+    {
+        $disk = Storage::fake('local');
+        $invoice = $this->invoice();
+        $url = "/api/v1/invoices/{$invoice}";
+        $this->getJson($url)->assertOk()->assertJsonPath('data.upload_status', 'not_uploaded');
+        $this->getJson($url.'/download')->assertNotFound();
+        $this->post($url, ['_method' => 'PATCH', 'file' => UploadedFile::fake()->create('invoice.pdf', 12, 'application/pdf')],
+            ['Accept' => 'application/json'])->assertOk()->assertJsonPath('data.upload_status', 'uploaded');
+        $this->getJson('/api/v1/invoices')->assertOk()->assertJsonPath('data.0.upload_status', 'uploaded');
+        $this->getJson($url)->assertOk()->assertJsonPath('data.status', 'unpaid')->assertJsonMissingPath('data.file_path');
+        $this->get($url.'/download')->assertOk()->assertDownload('invoice.pdf');
+
+        $previous = $disk->allFiles('invoices')[0];
+        $this->post($url, ['_method' => 'PATCH', 'file' => UploadedFile::fake()->create('revisi.pdf', 12, 'application/pdf'), 'total_amount' => '0'],
+            ['Accept' => 'application/json'])->assertUnprocessable();
+        $this->assertSame([$previous], $disk->allFiles('invoices'));
+        $this->post($url, ['_method' => 'PATCH', 'file' => UploadedFile::fake()->create('revisi.pdf', 12, 'application/pdf')],
+            ['Accept' => 'application/json'])->assertOk()->assertJsonPath('data.file_name', 'revisi.pdf');
+        $disk->assertMissing($previous);
+
+        Sanctum::actingAs(User::factory()->create(['is_active' => true])->assignRole(Role::findOrCreate('invoice-no-access', 'web')), ['*']);
+        $this->getJson($url.'/download')->assertForbidden();
     }
 
     public function test_only_verified_payments_count_towards_settlement_and_overpayment_is_blocked(): void

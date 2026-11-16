@@ -103,7 +103,8 @@ final class DistributionController extends Controller
         $this->ensureCanView($request, $distribution);
 
         return $this->respond($request, $distribution->load([
-            'employee',
+            'employee.department:id,name',
+            'sender:id,name',
             'items.item',
             'items.movement',
             'events',

@@ -1,10 +1,6 @@
 "use client";
 
-import { createPortal } from "react-dom";
-import { useState } from "react";
-import { Modal } from "@/components/ui/Modal";
-import { Button } from "@/components/ui/Button";
-import { Icon } from "@/components/ui/Icon";
+import { PrintPreview } from "@/components/ui/PrintPreview";
 import type { Company } from "@/features/companies/types";
 import { datePart, records, type Row } from "@/features/modules/api-types";
 import { documentMoney } from "../utils/totals";
@@ -12,8 +8,21 @@ import { formatQuantity } from "@/lib/quantity";
 
 type Props = { row: Row; company: Company };
 
+const approvalDate = new Intl.DateTimeFormat("id-ID", {
+  dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta",
+});
+
+const approvalNotes: Record<string, string> = {
+  pending_approval: "PO menunggu persetujuan",
+  rejected: "PO ditolak",
+  cancelled: "PO dibatalkan",
+};
+
 function PurchaseOrderLetter({ row, company }: Props) {
   const lines = records(row, "items");
+  const approvals = records(row, "approvals").filter(approval => approval.status === "approved");
+  const approvalNote = approvalNotes[String(row.status)];
+  const supplierAddress = typeof row.supplier_address === "string" ? row.supplier_address : row.supplier_address_snapshot;
   const dateLabel = (value: unknown) => datePart(value).split("-").reverse().join("/") || "—";
   const money = (value: unknown) => documentMoney(String(value));
 
@@ -36,6 +45,9 @@ function PurchaseOrderLetter({ row, company }: Props) {
         <div>
           <p className="po-caption">Supplier</p>
           <strong>{String(row.supplier_name_snapshot ?? "—")}</strong>
+          {typeof supplierAddress === "string" && supplierAddress.trim() && (
+            <p className="po-supplier-address">{supplierAddress}</p>
+          )}
         </div>
         <div className="po-letter-fields">
           <div>
@@ -86,28 +98,52 @@ function PurchaseOrderLetter({ row, company }: Props) {
         </p>
       </div>
       {Boolean(row.notes) && <div className="po-terms"><p><strong>Catatan</strong> {String(row.notes)}</p></div>}
+      {approvals.length > 0 && (
+        <div className="po-approval-history">
+          {approvalNote && <p>{approvalNote}</p>}
+
+          <table aria-label="Riwayat persetujuan PO">
+            <thead>
+              <tr>
+                <th colSpan={4} scope="colgroup" className="approval-title">
+                  Proses Persetujuan
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {approvals.map((approval) => {
+                const decidedAt = String(approval.decided_at ?? "");
+                const date = new Date(decidedAt);
+                return (
+                  <tr key={approval.id}>
+                    <th scope="row">Penyetuju</th>
+                    <td>{String(approval.decided_by_name ?? "—")}</td>
+                    <td>Disetujui</td>
+                    <td>
+                      {Number.isNaN(date.valueOf()) ? (
+                        "—"
+                      ) : (
+                        <time dateTime={decidedAt}>
+                          {approvalDate.format(date)}
+                        </time>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </article>
   );
 }
 
 export function OrderPreview({ row, company, onClose }: Props & { onClose: () => void }) {
-  const [printing, setPrinting] = useState(false);
-
-  async function print() {
-    setPrinting(true);
-    try {
-      await Promise.all(Array.from(document.querySelectorAll<HTMLImageElement>(".po-print-root img"))
-        .map(img => img.decode().catch(() => { })));
-      await document.fonts.ready;
-      window.print();
-    } finally { setPrinting(false); }
-  }
-
-  return <Modal title={"Surat PO - " + row.po_number} className="po-preview-modal" onClose={onClose}>
-    <div className="po-preview-toolbar"><p>Pratinjau surat purchase order</p>
-      <Button disabled={printing} onClick={() => void print()}><Icon name="file" size={16} />{printing ? "Menyiapkan..." : "Cetak / Simpan PDF"}</Button>
-    </div>
-    <div className="po-paper-scroll"><PurchaseOrderLetter row={row} company={company} /></div>
-    {createPortal(<div className="po-print-root"><PurchaseOrderLetter row={row} company={company} /></div>, document.body)}
-  </Modal>;
+  return (
+    <PrintPreview title={"Surat PO - " + row.po_number} onClose={onClose}>
+      <PurchaseOrderLetter row={row} company={company} />
+    </PrintPreview>
+  );
 }

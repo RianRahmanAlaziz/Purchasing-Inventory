@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Item\Actions;
 
 use App\Domain\Category\Models\Category;
+use App\Domain\Inventory\Support\StockDecimal;
 use App\Domain\Item\Models\Item;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
@@ -14,7 +15,7 @@ use Illuminate\Validation\ValidationException;
 final class SaveItem
 {
     private const EDITABLE = [
-        'category_id', 'sku', 'name', 'unit', 'minimum_stock', 'is_active',
+        'category_id', 'sku', 'name', 'unit', 'minimum_stock', 'maximum_stock', 'reference_price', 'is_active',
     ];
 
     public function create(array $data, bool $awaitingFirstReceipt = false): Item
@@ -22,6 +23,7 @@ final class SaveItem
         $data = Arr::only($data, self::EDITABLE);
         $data['is_active'] ??= true;
         $data['minimum_stock'] ??= '0';
+        $this->assertStockLimits((string) $data['minimum_stock'], isset($data['maximum_stock']) ? (string) $data['maximum_stock'] : null);
 
         try {
             return DB::transaction(function () use ($data, $awaitingFirstReceipt): Item {
@@ -47,6 +49,11 @@ final class SaveItem
             return DB::transaction(function () use ($item, $data): Item {
                 $locked = Item::query()->lockForUpdate()
                     ->findOrFail($item->getKey());
+                $maximum = array_key_exists('maximum_stock', $data) ? $data['maximum_stock'] : $locked->maximum_stock;
+                $this->assertStockLimits(
+                    (string) ($data['minimum_stock'] ?? $locked->minimum_stock),
+                    $maximum === null ? null : (string) $maximum,
+                );
 
                 if (array_key_exists('category_id', $data)) {
                     $this->assertActiveCategory((int) $data['category_id']);
@@ -75,6 +82,19 @@ final class SaveItem
             throw ValidationException::withMessages([
                 'category_id' => ['Kategori harus tersedia dan aktif.'],
             ]);
+        }
+    }
+
+    private function assertStockLimits(string $minimum, ?string $maximum): void
+    {
+        if ($maximum === null) {
+            return;
+        }
+
+        $min = StockDecimal::parse(preg_replace('/^0+(?=[0-9])/', '', $minimum));
+        $max = StockDecimal::parse(preg_replace('/^0+(?=[0-9])/', '', $maximum));
+        if ($max < $min) {
+            throw ValidationException::withMessages(['maximum_stock' => ['Stok maksimum harus sama dengan atau lebih besar dari stok minimum.']]);
         }
     }
 

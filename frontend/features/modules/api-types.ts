@@ -54,6 +54,7 @@ export type ApiModule = {
   columns: Column[];
   date: string;
   status?: string;
+  statusValue?: (row: Row) => string;
   details?: Column[];
   loadDetail?: boolean;
   adminEditAndRemoveOnly?: boolean;
@@ -68,7 +69,7 @@ export type ApiModule = {
   edit?: (row: Row) => boolean;
   remove?: (row: Row) => boolean;
   operations?: (row: Row, user: ApiUser) => Operation[];
-  print?: boolean;
+  print?: { label: string; available: (row: Row) => boolean };
 };
 
 export function get(row: Row | undefined, key: string): unknown {

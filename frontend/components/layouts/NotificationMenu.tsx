@@ -15,6 +15,7 @@ type Notice = {
   title: string;
   message: string;
   target: PurchaseOrderDestination["slug"];
+  kind?: "approval" | "cancellation_request";
   reason: string | null;
   read_at: string | null;
   created_at: string;
@@ -116,7 +117,7 @@ export function NotificationMenu() {
                 if (menu.current) menu.current.open = false;
                 if (!notice.read_at) void markRead(notice.id);
               }}>
-              {notice.target === "approvals" ? <>
+              {notice.target === "approvals" && notice.kind !== "cancellation_request" ? <>
                 <strong>Menunggu persetujuan</strong>
                 <span>{notice.purchase_order_number}</span>
               </> : <>

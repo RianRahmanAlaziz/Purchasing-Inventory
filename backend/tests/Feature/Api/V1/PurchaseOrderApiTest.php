@@ -595,17 +595,69 @@ final class PurchaseOrderApiTest extends TestCase
         $this->assertDatabaseCount('stock_movements', 0);
     }
 
-    public function test_cancel_approved_po_also_cancels_order(): void
+    public function test_cancellation_needs_hr_approval_before_it_cancels_po_and_order(): void
     {
-        $maker = $this->actor(['po.submit', 'po.update']);
-        $hr = $this->actor(['po.approve.hr'], 'hr');
+        Queue::fake([SendQueuedNotifications::class]);
+        $maker = $this->actor(['po.view', 'po.submit', 'po.update', 'po.send'], 'staff_hr');
+        $hr = $this->actor(['po.view', 'po.approve.hr'], 'hr');
+        $gm = $this->actor(['po.view', 'po.approve.hr'], 'general_manager');
+        $admin = $this->actor(['po.view', 'po.approve.hr'], 'super_admin');
         $po = $this->draft($maker);
         $this->submitAs($maker, $po);
         $this->approveAs($hr, $po, 'hr');
         $this->signIn($maker);
-        $this->postJson("/api/v1/purchase-orders/{$po->id}/cancel", ['reason' => 'Pembelian tidak jadi'])
+        $url = "/api/v1/purchase-orders/{$po->id}";
+        $reason = ['reason' => 'Pembelian tidak jadi'];
+        $id = $this->postJson($url.'/cancel', $reason)->assertOk()->assertJsonPath('data.status', 'approved')
+            ->assertJsonPath('data.order.status', 'pending')->assertJsonPath('data.cancellation.status', 'pending')->json('data.cancellation.id');
+        $this->postJson($url.'/cancel', $reason)->assertOk()->assertJsonPath('data.cancellation.id', $id);
+        $this->postJson($url.'/send')->assertConflict();
+
+        $decision = $url."/cancellations/{$id}/approve";
+        foreach ([$maker, $gm, $admin] as $nonHr) {
+            $this->signIn($nonHr);
+            $this->postJson($decision)->assertForbidden();
+        }
+
+        $this->signIn($hr);
+        $this->getJson('/api/v1/purchase-orders/approvals')->assertOk()
+            ->assertJsonPath('data.0.cancellation.reason', 'Pembelian tidak jadi');
+        $this->getJson('/api/v1/notifications')->assertOk()
+            ->assertJsonFragment(['kind' => 'cancellation_request', 'purchase_order_id' => $po->id]);
+        $this->postJson($decision)
             ->assertOk()->assertJsonPath('data.status', 'cancelled')
-            ->assertJsonPath('data.order.status', 'cancelled');
+            ->assertJsonPath('data.order.status', 'cancelled')->assertJsonPath('data.cancellation.decided_by_name', $hr->name);
+        $this->postJson($decision)->assertOk()->assertJsonPath('data.status', 'cancelled');
+        $this->assertDatabaseCount('purchase_order_cancellations', 1);
+        $this->assertSame(1, $po->events()->where('action', 'cancelled')->count());
+    }
+
+    public function test_hr_can_review_draft_cancellation_and_rejection_allows_submission_again(): void
+    {
+        Queue::fake([SendQueuedNotifications::class]);
+        $maker = $this->actor(['po.view', 'po.update', 'po.submit', 'po.reject.hr'], 'hr');
+        $hr = User::factory()->create(['is_active' => true])->assignRole('hr');
+        $po = $this->draft($maker);
+        $url = "/api/v1/purchase-orders/{$po->id}";
+        $this->signIn($maker);
+        $id = $this->postJson($url.'/cancel', ['reason' => 'Kebutuhan berubah'])->assertOk()->json('data.cancellation.id');
+        $this->postJson($url.'/submit')->assertConflict();
+        $this->deleteJson($url)->assertConflict();
+
+        $reject = $url."/cancellations/{$id}/reject";
+        $reason = ['reason' => 'Barang masih dibutuhkan'];
+        $this->postJson($reject, $reason)->assertForbidden();
+        $this->signIn($hr);
+        $this->getJson('/api/v1/purchase-orders/approvals')->assertOk()->assertJsonPath('data.0.id', $po->id);
+        $this->postJson($reject)->assertUnprocessable();
+        $this->postJson($reject, $reason)->assertOk()->assertJsonPath('data.status', 'draft')
+            ->assertJsonPath('data.cancellation.status', 'rejected')->assertJsonPath('data.cancellation.rejection_reason', $reason['reason']);
+        $this->submitAs($maker, $po);
+        $next = $this->postJson($url.'/cancel', ['reason' => 'Permintaan baru untuk dibatalkan'])->assertOk()->json('data.cancellation.id');
+        $this->assertNotSame($id, $next);
+        $this->signIn($hr);
+        $this->postJson($reject, $reason)->assertOk()->assertJsonPath('data.cancellation.id', $next)
+            ->assertJsonPath('data.cancellation.status', 'pending');
     }
 
     public function test_draft_can_be_soft_deleted_but_approved_cannot(): void

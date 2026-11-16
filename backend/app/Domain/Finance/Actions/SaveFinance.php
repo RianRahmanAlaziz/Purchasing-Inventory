@@ -9,7 +9,10 @@ use App\Domain\Finance\Models\Payment;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Purchasing\Support\PoMoney;
 use App\Domain\Supplier\Models\Supplier;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -17,7 +20,33 @@ final class SaveFinance
 {
     public function invoice(array $data, int $actorId, ?Invoice $invoice = null): Invoice
     {
-        return DB::transaction(function () use ($data, $actorId, $invoice): Invoice {
+        $file = Arr::pull($data, 'file');
+        if (! ($file instanceof UploadedFile)) {
+            return $this->persistInvoice($data, $actorId, $invoice);
+        }
+
+        $path = $file->store('invoices', 'local');
+        abort_if($path === false, 503, 'Berkas invoice belum dapat disimpan. Coba lagi.');
+
+        // Use an attachment name without directory components or control characters.
+        $original = basename(str_replace('\\', '/', $file->getClientOriginalName()));
+        $name = mb_substr(preg_replace('/[\x00-\x1f\x7f]/u', '', $original) ?? '', 0, 255);
+        try {
+            return $this->persistInvoice($data, $actorId, $invoice, [
+                'path' => $path,
+                'name' => $name !== '' ? $name : 'invoice.'.$file->guessExtension(),
+            ]);
+        } catch (\Throwable $exception) {
+            Storage::disk('local')->delete($path);
+
+            throw $exception;
+        }
+    }
+
+    /** @param array{path: string, name: string}|null $attachment */
+    private function persistInvoice(array $data, int $actorId, ?Invoice $invoice, ?array $attachment = null): Invoice
+    {
+        return DB::transaction(function () use ($data, $actorId, $invoice, $attachment): Invoice {
             $locked = $invoice ? Invoice::query()->lockForUpdate()->findOrFail($invoice->id) : new Invoice;
             $values = array_merge($locked->only(['supplier_id', 'purchase_order_id', 'total_amount', 'invoice_number', 'notes']), [
                 'invoice_date' => $locked->invoice_date?->format('Y-m-d'),
@@ -51,7 +80,22 @@ final class SaveFinance
             } else {
                 $values['created_by'] = $actorId;
             }
-            $locked->fill($values)->save();
+            $locked->fill($values);
+            if ($attachment !== null) {
+                $oldPath = $locked->file_path;
+                $locked->file_path = $attachment['path'];
+                $locked->file_name = $attachment['name'];
+                if ($oldPath !== null) {
+                    DB::afterCommit(static function () use ($oldPath): void {
+                        try {
+                            Storage::disk('local')->delete($oldPath);
+                        } catch (\Throwable $exception) {
+                            report($exception);
+                        }
+                    });
+                }
+            }
+            $locked->save();
 
             return Invoice::query()->withBalances()->findOrFail($locked->id);
         }, attempts: 3);

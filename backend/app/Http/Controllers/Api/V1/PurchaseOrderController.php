@@ -38,9 +38,9 @@ final class PurchaseOrderController extends Controller
             'per_page' => ['sometimes', 'integer', 'between:1,100'],
         ]);
         $query = PurchaseOrder::query()->visibleTo($request->user())
-            ->with(['items', 'taxes', 'approvals', 'order', 'employee:id,name', 'department:id,name']);
+            ->with(['items', 'taxes', 'approvals', 'order', 'employee:id,name', 'department:id,name', 'cancellation']);
         if ($approvalsOnly) {
-            $query->has('approvals');
+            $query->where(fn ($orders) => $orders->has('approvals')->orHas('cancellations'));
         }
         if (isset($filter['status'])) {
             $query->where('status', $filter['status']);
@@ -65,7 +65,7 @@ final class PurchaseOrderController extends Controller
     public function show(Request $request, string $purchaseOrder): JsonResponse
     {
         $po = PurchaseOrder::query()->visibleTo($request->user())
-            ->with(['items', 'taxes', 'approvals', 'order', 'events'])->find($purchaseOrder);
+            ->with(['items', 'taxes', 'approvals', 'order', 'events', 'cancellation', 'supplier:id,address'])->find($purchaseOrder);
         abort_if($po === null, 404, 'PO tidak ditemukan.');
 
         return $this->respond($request, $po);
@@ -121,7 +121,19 @@ final class PurchaseOrderController extends Controller
     {
         $data = $request->validate(['reason' => ['required', 'string', 'min:5', 'max:2000']]);
 
-        return $this->perform($request, fn () => $flow->cancel($purchaseOrder, $request->user(), $data['reason']));
+        return $this->perform($request, fn () => $flow->requestCancellation($purchaseOrder, $request->user(), $data['reason']));
+    }
+
+    public function decideCancellation(Request $request, PurchaseOrder $purchaseOrder, string $cancellation, string $decision, PurchaseOrderWorkflow $flow): JsonResponse
+    {
+        abort_unless(PurchaseOrderWorkflow::canDecideCancellation($request->user(), $decision), 403);
+
+        $approve = $decision === 'approve';
+        $data = $approve ? [] : $request->validate(['reason' => ['required', 'string', 'min:5', 'max:2000']]);
+
+        return $this->perform($request, fn () => $flow->decideCancellation(
+            $purchaseOrder, $cancellation, $request->user(), $approve, $data['reason'] ?? null,
+        ));
     }
 
     public function destroy(Request $request, PurchaseOrder $purchaseOrder, PurchaseOrderWorkflow $flow): JsonResponse
@@ -147,7 +159,7 @@ final class PurchaseOrderController extends Controller
 
     private function respond(Request $request, PurchaseOrder $po, string $message = 'PO berhasil diproses.', int $status = 200): JsonResponse
     {
-        $po->loadMissing(['employee:id,name', 'department:id,name']);
+        $po->loadMissing(['employee:id,name', 'department:id,name', 'cancellation']);
 
         return ApiResponse::success(
             data: (new PurchaseOrderResource($po))->toArray($request),

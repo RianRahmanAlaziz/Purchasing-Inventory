@@ -7,6 +7,7 @@ namespace App\Domain\Purchasing\Actions;
 use App\Domain\Purchasing\Exceptions\PurchaseOrderConflict;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Purchasing\Models\PurchaseOrderApproval;
+use App\Domain\Purchasing\Models\PurchaseOrderCancellation;
 use App\Domain\Purchasing\Support\PoMoney;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -24,6 +25,7 @@ final class PurchaseOrderWorkflow
                 return $this->load($po); // replay aman
             }
             $this->requireStatus($po, 'draft');
+            $this->requireNoPendingCancellation($po);
 
             $employee = $po->employee;
             $department = $po->department;
@@ -97,6 +99,7 @@ final class PurchaseOrderWorkflow
                 return $this->load($po); // idem: tidak membuat Order lagi
             }
             $this->requireStatus($po, 'pending_approval');
+            $this->requireNoPendingCancellation($po);
             if ($approval->status !== 'pending') {
                 throw new PurchaseOrderConflict('Langkah approval sudah diputuskan.');
             }
@@ -131,6 +134,7 @@ final class PurchaseOrderWorkflow
             $approval = $this->step($po, $step);
             $this->makerChecker($po, $actor);
             $this->requireStatus($po, 'pending_approval');
+            $this->requireNoPendingCancellation($po);
             if ($approval->status !== 'pending') {
                 throw new PurchaseOrderConflict('Langkah approval sudah diputuskan.');
             }
@@ -157,6 +161,7 @@ final class PurchaseOrderWorkflow
                 return $this->load($po);
             }
             $this->requireStatus($po, 'approved');
+            $this->requireNoPendingCancellation($po);
             if (! $po->order()->exists()) {
                 throw new PurchaseOrderConflict('Order hasil approval tidak ditemukan.');
             }
@@ -213,20 +218,69 @@ final class PurchaseOrderWorkflow
         }, attempts: 3);
     }
 
-    public function cancel(PurchaseOrder $po, User $actor, string $reason): PurchaseOrder
+    public function requestCancellation(PurchaseOrder $po, User $actor, string $reason): PurchaseOrder
     {
         return DB::transaction(function () use ($po, $actor, $reason): PurchaseOrder {
             $po = $this->locked($po);
-            if (! in_array($po->status, ['draft', 'pending_approval', 'approved'], true)) {
+            if (! in_array($po->status, PurchaseOrder::CANCELLABLE_STATUSES, true)) {
                 throw new PurchaseOrderConflict('PO tidak dapat dibatalkan pada status sekarang.');
             }
-            $from = $po->status;
-            $po->update(['status' => 'cancelled', 'cancelled_at' => now()]);
-            $po->approvals()->where('status', 'pending')->update(['status' => 'cancelled']);
-            if ($po->order()->exists()) {
-                $po->order()->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+            $pending = $po->cancellations()->where('status', 'pending')->first();
+            if ($pending !== null) {
+                if ((int) $pending->requested_by === (int) $actor->id && $pending->reason === $reason) {
+                    return $this->load($po);
+                }
+                throw new PurchaseOrderConflict('PO ini sudah memiliki permintaan pembatalan yang menunggu HR.');
             }
-            $this->event($po, $actor, 'cancelled', $from, 'cancelled', $reason);
+
+            $cancellation = $po->cancellations()->create(['requested_by' => $actor->id, 'status' => 'pending', 'reason' => $reason]);
+            $this->event($po, $actor, 'cancellation_requested', $po->status, $po->status, $reason);
+            $this->notifications->cancellationRequested($po, $cancellation);
+
+            return $this->load($po);
+        }, attempts: 3);
+    }
+
+    public static function canDecideCancellation(User $actor, string $decision): bool
+    {
+        return $actor->hasRole('hr', 'web') && $actor->can("po.{$decision}.hr");
+    }
+
+    public function decideCancellation(PurchaseOrder $po, string $requestId, User $actor, bool $approve, ?string $reason = null): PurchaseOrder
+    {
+        $decision = $approve ? 'approve' : 'reject';
+        self::canDecideCancellation($actor, $decision) || throw new AuthorizationException('Pembatalan PO harus diputuskan oleh HR.');
+
+        return DB::transaction(function () use ($po, $requestId, $actor, $approve, $reason): PurchaseOrder {
+            $po = $this->locked($po);
+            /** @var PurchaseOrderCancellation $cancellation */
+            $cancellation = $po->cancellations()->findOrFail($requestId);
+            if ((int) $cancellation->requested_by === (int) $actor->id) {
+                throw new AuthorizationException('Pemohon pembatalan tidak boleh memutuskan permintaannya sendiri.');
+            }
+
+            $status = $approve ? 'approved' : 'rejected';
+            if ($cancellation->status === $status && (int) $cancellation->decided_by === (int) $actor->id) {
+                return $this->load($po);
+            }
+            if ($cancellation->status !== 'pending' || ! in_array($po->status, PurchaseOrder::CANCELLABLE_STATUSES, true)) {
+                throw new PurchaseOrderConflict('Permintaan pembatalan ini sudah diputuskan atau tidak berlaku.');
+            }
+
+            $now = now();
+            $cancellation->update([
+                'status' => $status, 'decided_by' => $actor->id, 'decided_at' => $now, 'rejection_reason' => $reason,
+            ]);
+            $from = $po->status;
+            if ($approve) {
+                $po->update(['status' => 'cancelled', 'cancelled_at' => $now]);
+                $po->approvals()->where('status', 'pending')->update(['status' => 'cancelled']);
+                $po->order()->update(['status' => 'cancelled', 'cancelled_at' => $now]);
+                $this->event($po, $actor, 'cancelled', $from, 'cancelled', $cancellation->reason);
+            } else {
+                $this->event($po, $actor, 'cancellation_rejected', $from, $from, $reason);
+            }
+            $this->notifications->cancellationDecided($po, $cancellation);
 
             return $this->load($po);
         }, attempts: 3);
@@ -239,6 +293,7 @@ final class PurchaseOrderWorkflow
             if (! in_array($po->status, ['draft', 'rejected', 'cancelled'], true)) {
                 throw new PurchaseOrderConflict('Hanya PO Draft/Rejected/Cancelled yang boleh dihapus.');
             }
+            $this->requireNoPendingCancellation($po);
             $this->event($po, $actor, 'deleted', $po->status, $po->status);
             $po->delete();
         }, attempts: 3);
@@ -291,6 +346,13 @@ final class PurchaseOrderWorkflow
         }
     }
 
+    private function requireNoPendingCancellation(PurchaseOrder $po): void
+    {
+        if ($po->hasPendingCancellation()) {
+            throw new PurchaseOrderConflict('Tunggu keputusan HR atas permintaan pembatalan PO.');
+        }
+    }
+
     private function event(PurchaseOrder $po, User $actor, string $action, ?string $from, string $to, ?string $notes = null): void
     {
         $po->events()->create([
@@ -305,6 +367,6 @@ final class PurchaseOrderWorkflow
 
     private function load(PurchaseOrder $po): PurchaseOrder
     {
-        return $po->refresh()->load(['items', 'taxes', 'approvals', 'order', 'events']);
+        return $po->refresh()->load(['items', 'taxes', 'approvals', 'order', 'events', 'cancellation']);
     }
 }

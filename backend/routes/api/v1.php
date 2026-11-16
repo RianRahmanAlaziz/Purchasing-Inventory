@@ -81,6 +81,7 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::get('/', [InvoiceController::class, 'index'])->middleware('can:invoices.view')->name('index');
         Route::post('/', [InvoiceController::class, 'store'])->middleware('can:invoices.manage')->name('store');
         Route::get('/{invoice}', [InvoiceController::class, 'show'])->whereNumber('invoice')->middleware('can:invoices.view')->name('show');
+        Route::get('/{invoice}/download', [InvoiceController::class, 'download'])->whereNumber('invoice')->middleware('can:invoices.view')->name('download');
         Route::patch('/{invoice}', [InvoiceController::class, 'update'])->whereNumber('invoice')->middleware('can:invoices.manage')->name('update');
         Route::delete('/{invoice}', [InvoiceController::class, 'destroy'])->whereNumber('invoice')->middleware('can:invoices.manage')->name('destroy');
     });
@@ -218,6 +219,9 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::post('/{purchaseOrder}/send', [PurchaseOrderController::class, 'send'])->whereNumber('purchaseOrder')->middleware('can:po.send')->name('send');
         Route::post('/{purchaseOrder}/supplier-confirm', [PurchaseOrderController::class, 'supplierConfirm'])->whereNumber('purchaseOrder')->middleware('can:po.supplier-confirm')->name('supplier-confirm');
         Route::post('/{purchaseOrder}/cancel', [PurchaseOrderController::class, 'cancel'])->whereNumber('purchaseOrder')->middleware('can:po.update')->name('cancel');
+        Route::post('/{purchaseOrder}/cancellations/{cancellation}/{decision}', [PurchaseOrderController::class, 'decideCancellation'])
+            ->whereNumber(['purchaseOrder', 'cancellation'])->whereIn('decision', ['approve', 'reject'])
+            ->middleware(['can:po.view', RoleMiddleware::using('hr')])->name('cancellations.decide');
     });
 
     Route::prefix('orders')->name('orders.')->middleware('can:orders.view')->group(function (): void {

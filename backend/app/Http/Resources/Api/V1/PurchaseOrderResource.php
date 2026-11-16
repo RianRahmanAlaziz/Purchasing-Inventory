@@ -20,6 +20,8 @@ final class PurchaseOrderResource extends JsonResource
             'supplier_name_snapshot' => $this->supplier_name_snapshot,
             'supplier_code_snapshot' => $this->supplier_code_snapshot,
             'supplier_address_snapshot' => $this->supplier_address_snapshot,
+            'supplier_address' => $this->supplier_address_snapshot
+                ?? $this->whenLoaded('supplier', static fn ($supplier): ?string => $supplier->address, null),
             'company_id' => $this->company_id,
             'company_snapshot' => $this->company_snapshot,
             'tax_scope' => $this->tax_scope,
@@ -46,6 +48,17 @@ final class PurchaseOrderResource extends JsonResource
             'approved_at' => $this->approved_at?->toIso8601String(),
             'sent_at' => $this->sent_at?->toIso8601String(),
             'supplier_confirmed_at' => $this->supplier_confirmed_at?->toIso8601String(),
+            'cancellation' => $this->whenLoaded('cancellation', fn ($cancellation): array => [
+                'id' => $cancellation->id,
+                'status' => $cancellation->status,
+                'reason' => $cancellation->reason,
+                'requested_by' => $cancellation->requested_by,
+                'requested_by_name' => $cancellation->requester?->name,
+                'requested_at' => $cancellation->created_at?->toIso8601String(),
+                'decided_by_name' => $cancellation->decider?->name,
+                'decided_at' => $cancellation->decided_at?->toIso8601String(),
+                'rejection_reason' => $cancellation->rejection_reason,
+            ], null),
             'items' => $this->whenLoaded('items', fn (): array => $this->items->map(fn ($entry): array => [
                 'id' => $entry->id,
                 'item_id' => $entry->item_id,

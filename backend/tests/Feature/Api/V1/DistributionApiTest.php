@@ -339,6 +339,10 @@ final class DistributionApiTest extends TestCase
         $this->postJson($this->url($distribution, 'prepare'))->assertOk();
         $this->postJson($this->url($distribution, 'send'))
             ->assertOk()->assertJsonPath('data.status', 'sent');
+        $this->getJson('/api/v1/distributions/'.$distribution->id)->assertOk()
+            ->assertJsonPath('data.employee.name', $this->employee->name)
+            ->assertJsonPath('data.employee.department_name', 'Department Distribusi')
+            ->assertJsonPath('data.sender_name', $this->staff->name);
         $this->assertSame('7.000', (string) $this->item->fresh()->stock_quantity);
         $this->assertSame(1, $this->outCount());
         $lineId = DistributionItem::query()->where('distribution_id', $distribution->id)->value('id');

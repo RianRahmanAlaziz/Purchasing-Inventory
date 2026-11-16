@@ -41,6 +41,9 @@ final class SaveDraftPurchaseOrder
             if ($locked->status !== 'draft') {
                 throw new PurchaseOrderConflict('PO hanya boleh diubah saat Draft.');
             }
+            if ($locked->hasPendingCancellation()) {
+                throw new PurchaseOrderConflict('Tunggu keputusan HR atas permintaan pembatalan PO.');
+            }
 
             // PATCH parsial: daftar item dan pajak lama digunakan bila field tidak dikirim.
             $locked->load('items', 'taxes');

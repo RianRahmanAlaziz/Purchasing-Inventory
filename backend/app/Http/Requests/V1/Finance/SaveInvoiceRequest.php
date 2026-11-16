@@ -27,6 +27,7 @@ final class SaveInvoiceRequest extends FormRequest
             'due_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'total_amount' => [$required, 'regex:/^(?:0|[1-9][0-9]{0,15})(?:\\.[0-9]{1,2})?$/D'],
             'notes' => ['sometimes', 'nullable', 'string', 'max:5000'],
+            'file' => ['sometimes', 'file', 'mimes:pdf,png,jpg,jpeg,webp', 'extensions:pdf,png,jpg,jpeg,webp', 'max:5120'],
         ];
     }
 }

@@ -28,6 +28,7 @@ final class PurchaseOrderNotification extends Notification implements ShouldQueu
         public readonly string $message,
         public readonly ?string $pendingRole = null,
         public readonly ?string $reason = null,
+        public readonly ?int $cancellationId = null,
     ) {}
 
     public function via(User $notifiable): array
@@ -49,6 +50,7 @@ final class PurchaseOrderNotification extends Notification implements ShouldQueu
             'message' => $this->message,
             'target' => $this->target(),
             'reason' => $this->reason,
+            'kind' => $this->cancellationId === null ? 'approval' : 'cancellation_request',
         ];
     }
 
@@ -82,6 +84,10 @@ final class PurchaseOrderNotification extends Notification implements ShouldQueu
         }
 
         $po = PurchaseOrder::query()->find($this->purchaseOrderId);
+
+        if (($this->cancellationId ?? null) !== null) {
+            return $po !== null && $po->cancellations()->whereKey($this->cancellationId)->where('status', 'pending')->exists();
+        }
 
         return $po?->status === 'pending_approval'
             && $po->approvals()->where('status', 'pending')->value('role_name') === $this->pendingRole;

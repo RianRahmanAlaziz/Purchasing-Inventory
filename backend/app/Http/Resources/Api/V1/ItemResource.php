@@ -19,8 +19,11 @@ final class ItemResource extends JsonResource
             // DECIMAL dikirim sebagai string, menjaga presisi angka.
             'stock_quantity' => $this->stock_quantity,
             'minimum_stock' => $this->minimum_stock,
+            'maximum_stock' => $this->maximum_stock,
+            'reference_price' => $this->reference_price,
             'last_purchase_price' => $this->last_purchase_price,
             'is_low_stock' => (bool) $this->is_low_stock,
+            'stock_level' => $this->stock_level,
             'is_active' => (bool) $this->is_active,
             'category' => $this->whenLoaded('category', fn (): ?array => $this->category === null ? null : [
                 'id' => $this->category->id,

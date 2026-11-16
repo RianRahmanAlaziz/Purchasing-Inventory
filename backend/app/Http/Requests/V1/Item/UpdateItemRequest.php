@@ -59,6 +59,8 @@ final class UpdateItemRequest extends FormRequest
                 'sometimes', 'required', 'numeric', 'min:0', 'decimal:0,3',
                 'regex:/^\d{1,15}(?:\.\d{1,3})?$/',
             ],
+            'maximum_stock' => ['sometimes', 'nullable', 'regex:/^\d{1,15}(?:\.\d{1,3})?$/D'],
+            'reference_price' => ['sometimes', 'nullable', 'regex:/^\d{1,16}(?:\.\d{1,2})?$/D'],
             'is_active' => ['sometimes', 'required', 'boolean'],
             'stock_quantity' => ['prohibited'],
             'last_purchase_price' => ['prohibited'],

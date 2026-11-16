@@ -12,6 +12,8 @@ use App\Http\Resources\Api\V1\InvoiceResource;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class InvoiceController extends Controller
 {
@@ -48,5 +50,15 @@ final class InvoiceController extends Controller
         $save->deleteInvoice($invoice);
 
         return ApiResponse::success(null, 'Data dihapus.');
+    }
+
+    public function download(Invoice $invoice): StreamedResponse
+    {
+        $storage = Storage::disk('local');
+        abort_unless($invoice->file_path && $storage->exists($invoice->file_path), 404);
+
+        return $storage->download($invoice->file_path, $invoice->file_name, [
+            'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 }

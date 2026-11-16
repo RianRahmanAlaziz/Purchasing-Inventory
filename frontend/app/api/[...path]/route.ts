@@ -41,7 +41,7 @@ async function forward(request: NextRequest, context: Context) {
     const body = read ? null : await request.arrayBuffer();
     if (body?.byteLength) {
       const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
-      const upload = method === "POST" && /^documents(?:\/[1-9][0-9]*)?$/.test(path) && contentType === "multipart/form-data";
+      const upload = method === "POST" && /^(?:documents|invoices)(?:\/[1-9][0-9]*)?$/.test(path) && contentType === "multipart/form-data";
       if (body.byteLength > (upload ? 6 : 4) * 1024 * 1024) return json({ message: "Ukuran permintaan terlalu besar." }, 413);
       if (contentType !== "application/json" && !upload) return json({ message: "Format permintaan tidak didukung." }, 415);
       headers.set("Content-Type", upload ? request.headers.get("content-type")! : "application/json");
@@ -56,7 +56,7 @@ async function forward(request: NextRequest, context: Context) {
       return new NextResponse(null, { status: upstream.status, headers: { "Cache-Control": "no-store" } });
     }
     if (!upstream.headers.get("content-type")?.includes("application/json")) {
-      if (upstream.ok && method === "GET" && /^documents\/[1-9][0-9]*\/download$/.test(path)) {
+      if (upstream.ok && method === "GET" && /^(?:documents|invoices)\/[1-9][0-9]*\/download$/.test(path)) {
         return new NextResponse(upstream.body, { status: upstream.status, headers: {
           "Content-Type": upstream.headers.get("content-type") || "application/octet-stream",
           "Content-Disposition": upstream.headers.get("content-disposition") || "attachment",

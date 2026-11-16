@@ -436,7 +436,8 @@ final class OrderApiTest extends TestCase
         $order = $this->approvedOrder();
         $po = PurchaseOrder::query()->findOrFail($order->purchase_order_id);
         $workflow = app(PurchaseOrderWorkflow::class);
-        $workflow->cancel($po, $this->maker, 'Kebutuhan dibatalkan');
+        $request = $workflow->requestCancellation($po, $this->maker, 'Kebutuhan dibatalkan');
+        $workflow->decideCancellation($po, (string) $request->cancellation->id, $this->hr, true);
         $workflow->softDelete($po, $this->maker);
         $this->signIn($this->roleUser(['orders.view']));
         $this->getJson('/api/v1/orders/'.$order->id)

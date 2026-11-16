@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Purchasing\Actions;
 
 use App\Domain\Purchasing\Models\PurchaseOrder;
+use App\Domain\Purchasing\Models\PurchaseOrderCancellation;
 use App\Domain\Purchasing\Notifications\PurchaseOrderNotification;
 use App\Models\User;
 use Illuminate\Support\Collection;
@@ -58,6 +59,42 @@ final class NotifyPurchaseOrderApproval
             'PO ditolak',
             "PO {$po->po_number} ditolak pada tahap {$stage}.",
             reason: $reason,
+        ));
+    }
+
+    public function cancellationRequested(PurchaseOrder $po, PurchaseOrderCancellation $cancellation): void
+    {
+        $reviewers = User::query()->where('is_active', true)
+            ->whereKeyNot($cancellation->requested_by)
+            ->whereHas('roles', fn ($query) => $query->where('name', 'hr')->where('guard_name', 'web'))
+            ->with(['roles.permissions', 'permissions'])->get()
+            ->filter(fn (User $user): bool => $user->can('po.view') && (
+                PurchaseOrderWorkflow::canDecideCancellation($user, 'approve')
+                || PurchaseOrderWorkflow::canDecideCancellation($user, 'reject')
+            ));
+
+        $this->deliver($reviewers, new PurchaseOrderNotification(
+            (int) $po->id,
+            $po->po_number,
+            'Permintaan pembatalan PO',
+            "PO {$po->po_number} menunggu keputusan HR untuk pembatalan.",
+            pendingRole: 'hr',
+            cancellationId: (int) $cancellation->id,
+        ));
+    }
+
+    public function cancellationDecided(PurchaseOrder $po, PurchaseOrderCancellation $cancellation): void
+    {
+        $accepted = $cancellation->status === 'approved';
+        $recipients = User::query()->whereKey([$po->created_by, $cancellation->requested_by])->where('is_active', true)
+            ->with(['roles.permissions', 'permissions'])->get()->filter(fn (User $user): bool => $user->can('po.view'));
+
+        $this->deliver($recipients, new PurchaseOrderNotification(
+            (int) $po->id,
+            $po->po_number,
+            $accepted ? 'Pembatalan PO disetujui' : 'Pembatalan PO ditolak',
+            $accepted ? "PO {$po->po_number} dibatalkan oleh HR." : "PO {$po->po_number} tetap berlaku.",
+            reason: $cancellation->rejection_reason,
         ));
     }
 
