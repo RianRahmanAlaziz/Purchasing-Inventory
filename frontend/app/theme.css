@@ -437,6 +437,13 @@
 }
 
 .api-actions { flex-wrap: wrap; }
+.po-invoice-document { margin-block: 22px 8px; padding-block-start: 18px; border-block-start: 1px solid var(--line); }
+.po-invoice-document > h3 { margin-block-end: 10px; }
+.po-invoice-document > a { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+.po-invoice-upload { display: grid; gap: 10px; margin-block-start: 15px; }
+.po-invoice-upload input { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: white; font-size: 12px; }
+.po-invoice-upload label { font-size: 12px; }
+.po-invoice-upload > .button { justify-self: start; }
 @media (max-width: 600px) { .order-editor-modal .form-row { grid-template-columns: 1fr; } }
 
 .api-record-editor[open] {

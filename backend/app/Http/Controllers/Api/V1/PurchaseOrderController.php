@@ -38,7 +38,7 @@ final class PurchaseOrderController extends Controller
             'per_page' => ['sometimes', 'integer', 'between:1,100'],
         ]);
         $query = PurchaseOrder::query()->visibleTo($request->user())
-            ->with(['items', 'taxes', 'approvals', 'order', 'employee:id,name', 'department:id,name', 'cancellation']);
+            ->with(['items', 'taxes', 'approvals', 'order', 'employee:id,name', 'department:id,name', 'cancellation', 'legacyInvoiceDocument']);
         if ($approvalsOnly) {
             $query->where(fn ($orders) => $orders->has('approvals')->orHas('cancellations'));
         }
@@ -65,7 +65,7 @@ final class PurchaseOrderController extends Controller
     public function show(Request $request, string $purchaseOrder): JsonResponse
     {
         $po = PurchaseOrder::query()->visibleTo($request->user())
-            ->with(['items', 'taxes', 'approvals', 'order', 'events', 'cancellation', 'supplier:id,address'])->find($purchaseOrder);
+            ->with(['items', 'taxes', 'approvals', 'order', 'events', 'cancellation', 'supplier:id,address', 'legacyInvoiceDocument'])->find($purchaseOrder);
         abort_if($po === null, 404, 'PO tidak ditemukan.');
 
         return $this->respond($request, $po);
@@ -159,7 +159,7 @@ final class PurchaseOrderController extends Controller
 
     private function respond(Request $request, PurchaseOrder $po, string $message = 'PO berhasil diproses.', int $status = 200): JsonResponse
     {
-        $po->loadMissing(['employee:id,name', 'department:id,name', 'cancellation']);
+        $po->loadMissing(['employee:id,name', 'department:id,name', 'cancellation', 'legacyInvoiceDocument']);
 
         return ApiResponse::success(
             data: (new PurchaseOrderResource($po))->toArray($request),

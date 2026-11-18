@@ -19,6 +19,7 @@ import { documentMoney } from "@/features/purchase-orders/utils/totals";
 import { ApiRecordEditor } from "../components/ApiRecordEditor";
 import { ApiPurchaseOrderPreview } from "@/features/purchase-orders/components/ApiPurchaseOrderPreview";
 import { CreateOrderModal } from "@/features/purchase-orders/components/CreateOrderModal";
+import { PoInvoiceDocument } from "@/features/purchase-orders/components/PoInvoiceDocument";
 import { DistributionLetter } from "@/features/distributions/components/DistributionLetter";
 import { apiModules } from "../constants/apiModules";
 import { useApiData } from "../hooks/useApiData";
@@ -72,12 +73,13 @@ function Cell({ row, column }: { row: Row; column: Column }) {
   return <Badge tone={tone}>{text(row, column)}</Badge>;
 }
 
-function Details({ row: summary, config, close, edit, act, preview }: {
+function Details({ row: summary, config, close, edit, act, preview, revision, refresh }: {
   row: Row; config: ApiModule; close: () => void; edit: (row: Row) => void;
   act: (operation: Operation, row: Row) => void; preview: (row: Row) => void;
+  revision: number; refresh: () => void;
 }) {
   const user = useSession();
-  const detail = useApiData<Row>(config.loadDetail ? config.endpoint + "/" + summary.id : null);
+  const detail = useApiData<Row>(config.loadDetail ? config.endpoint + "/" + summary.id : null, revision);
   const row = detail.data ?? summary;
   const operations = (config.operations?.(row, user) ?? [])
     .filter(operation => !operation.permission || user.permissions.includes(operation.permission));
@@ -114,10 +116,15 @@ function Details({ row: summary, config, close, edit, act, preview }: {
           </table></div>
         </section>;
       })}
+      {config.endpoint === "purchase-orders" && !detail.error && detail.data && <PoInvoiceDocument
+        purchaseOrderId={row.id} fileName={typeof row.invoice_file_name === "string" ? row.invoice_file_name : null}
+        canUpload={!!config.mutations?.edit && user.permissions.includes("po.update")} loading={detail.loading} saved={refresh}/>}
     </div>
     <div className="modal-actions api-actions">
-      {["documents", "invoices"].includes(config.endpoint) && Boolean(row.file_name) &&
+      {config.endpoint === "documents" && Boolean(row.file_name) &&
         <a className="button secondary" href={`/api/${config.endpoint}/${row.id}/download`}>Unduh berkas</a>}
+      {config.endpoint === "orders" && Boolean(get(row, "purchase_order.invoice_file_name")) &&
+        <a className="button secondary" href={`/api/orders/${row.id}/invoice-document`}>Unduh invoice</a>}
       {config.print && !detail.loading && !detail.error && config.print.available(row) &&
         <Button variant="secondary" onClick={() => preview(row)}>{config.print.label}</Button>}
       {canEdit && <Button variant="secondary" onClick={() => edit(row)}>Edit</Button>}
@@ -288,7 +295,7 @@ export function ApiModuleView({ slug }: { slug: string }) {
       ? <CreateOrderModal row={selection.row} onClose={() => setSelection({ mode: "detail", row: selection.row })} onSaved={saved}/>
       : <ApiRecordEditor config={config} row={selection.row}
         close={() => setSelection({ mode: "detail", row: selection.row })} saved={saved}/>)}
-    {selection?.mode === "detail" && <Details row={selection.row} config={config} close={closeSelection}
+    {selection?.mode === "detail" && <Details row={selection.row} config={config} close={closeSelection} revision={revision} refresh={refresh}
       edit={row => setSelection({ mode: "edit", row })}
       act={(operation, row) => setSelection({ mode: "operation", row, operation })}
       preview={row => setSelection({ mode: "preview", row })}/>}

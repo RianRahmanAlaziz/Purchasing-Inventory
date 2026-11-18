@@ -12,10 +12,14 @@ final class PurchaseOrderResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $invoice = $this->invoiceFile();
+
         return [
             'id' => $this->id,
             'po_number' => $this->po_number,
             'status' => $this->status,
+            'invoice_upload_status' => $invoice['path'] !== null ? 'uploaded' : 'not_uploaded',
+            'invoice_file_name' => $invoice['name'],
             'supplier_id' => $this->supplier_id,
             'supplier_name_snapshot' => $this->supplier_name_snapshot,
             'supplier_code_snapshot' => $this->supplier_code_snapshot,

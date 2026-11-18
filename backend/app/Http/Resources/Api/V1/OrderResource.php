@@ -19,20 +19,28 @@ final class OrderResource extends JsonResource
             'completed_at' => $this->completed_at?->toIso8601String(),
             'cancelled_at' => $this->cancelled_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
-            'purchase_order' => $this->whenLoaded('purchaseOrder', fn (): ?array => $this->purchaseOrder === null ? null : [
-                'id' => $this->purchaseOrder->id,
-                'po_number' => $this->purchaseOrder->po_number,
-                'status' => $this->purchaseOrder->status,
-                'supplier_id' => $this->purchaseOrder->supplier_id,
-                'supplier_name' => $this->purchaseOrder->supplier_name_snapshot,
-                'requested_for_employee_id' => $this->purchaseOrder->requested_for_employee_id,
-                'requested_for_department_id' => $this->purchaseOrder->requested_for_department_id,
-                'order_date' => $this->purchaseOrder->order_date?->format('Y-m-d'),
-                'expected_date' => $this->purchaseOrder->expected_date?->format('Y-m-d'),
-                'total_amount' => $this->purchaseOrder->total_amount,
-                'po_deleted_at' => $this->purchaseOrder->deleted_at?->toIso8601String(),
-            ]
-            ),
+            'purchase_order' => $this->whenLoaded('purchaseOrder', function (): ?array {
+                if ($this->purchaseOrder === null) {
+                    return null;
+                }
+                $invoice = $this->purchaseOrder->invoiceFile();
+
+                return [
+                    'id' => $this->purchaseOrder->id,
+                    'po_number' => $this->purchaseOrder->po_number,
+                    'status' => $this->purchaseOrder->status,
+                    'invoice_upload_status' => $invoice['path'] !== null ? 'uploaded' : 'not_uploaded',
+                    'invoice_file_name' => $invoice['name'],
+                    'supplier_id' => $this->purchaseOrder->supplier_id,
+                    'supplier_name' => $this->purchaseOrder->supplier_name_snapshot,
+                    'requested_for_employee_id' => $this->purchaseOrder->requested_for_employee_id,
+                    'requested_for_department_id' => $this->purchaseOrder->requested_for_department_id,
+                    'order_date' => $this->purchaseOrder->order_date?->format('Y-m-d'),
+                    'expected_date' => $this->purchaseOrder->expected_date?->format('Y-m-d'),
+                    'total_amount' => $this->purchaseOrder->total_amount,
+                    'po_deleted_at' => $this->purchaseOrder->deleted_at?->toIso8601String(),
+                ];
+            }),
         ];
     }
 }

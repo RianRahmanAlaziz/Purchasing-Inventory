@@ -6,6 +6,7 @@ namespace App\Domain\Purchasing\Models;
 
 use App\Domain\Employee\Models\Department;
 use App\Domain\Employee\Models\Employee;
+use App\Domain\Finance\Models\Invoice;
 use App\Domain\Supplier\Models\Supplier;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -85,6 +86,24 @@ final class PurchaseOrder extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function legacyInvoiceDocument(): HasOne
+    {
+        return $this->hasOne(Invoice::class)->ofMany(['id' => 'max'], fn (Builder $query) => $query->whereNotNull('file_path'));
+    }
+
+    /** @return array{path: ?string, name: ?string} */
+    public function invoiceFile(): array
+    {
+        if ($this->invoice_file_path !== null) {
+            return ['path' => $this->invoice_file_path, 'name' => $this->invoice_file_name];
+        }
+
+        // Berkas pada tagihan lama tetap dapat dibaca sampai diganti melalui PO.
+        $legacy = $this->legacyInvoiceDocument;
+
+        return ['path' => $legacy?->file_path, 'name' => $legacy?->file_name];
     }
 
     public function items(): HasMany

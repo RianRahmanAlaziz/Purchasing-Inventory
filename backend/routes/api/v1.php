@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\PermissionController;
 use App\Http\Controllers\Api\V1\PurchaseOrderController;
+use App\Http\Controllers\Api\V1\PurchaseOrderInvoiceController;
 use App\Http\Controllers\Api\V1\PurchaseOrderSuggestionController;
 use App\Http\Controllers\Api\V1\RbacAuditController;
 use App\Http\Controllers\Api\V1\RoleController;
@@ -211,6 +212,10 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::get('/', [PurchaseOrderController::class, 'index'])->middleware('can:po.view')->name('index');
         Route::post('/', [PurchaseOrderController::class, 'store'])->middleware('can:po.create')->name('store');
         Route::get('/{purchaseOrder}', [PurchaseOrderController::class, 'show'])->whereNumber('purchaseOrder')->middleware('can:po.view')->name('show');
+        Route::post('/{purchaseOrder}/invoice-document', [PurchaseOrderInvoiceController::class, 'store'])
+            ->whereNumber('purchaseOrder')->middleware(['can:po.view', 'can:po.update'])->name('invoice-document.store');
+        Route::get('/{purchaseOrder}/invoice-document', [PurchaseOrderInvoiceController::class, 'download'])
+            ->whereNumber('purchaseOrder')->middleware('can:po.view')->name('invoice-document.download');
         Route::patch('/{purchaseOrder}', [PurchaseOrderController::class, 'update'])->whereNumber('purchaseOrder')->middleware('can:po.update')->name('update');
         Route::delete('/{purchaseOrder}', [PurchaseOrderController::class, 'destroy'])->whereNumber('purchaseOrder')->middleware('can:po.update')->name('destroy');
         Route::post('/{purchaseOrder}/submit', [PurchaseOrderController::class, 'submit'])->whereNumber('purchaseOrder')->middleware('can:po.submit')->name('submit');
@@ -228,6 +233,7 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::get('/', [OrderController::class, 'index'])->name('index');
         Route::get('/summary', [OrderController::class, 'summary'])->name('summary');
         Route::get('/{order}', [OrderController::class, 'show'])->whereNumber('order')->name('show');
+        Route::get('/{order}/invoice-document', [PurchaseOrderInvoiceController::class, 'downloadForOrder'])->whereNumber('order')->name('invoice-document.download');
         Route::get('/{order}/receipts', [OrderController::class, 'receipts'])->whereNumber('order')->name('receipts');
     });
 

@@ -7,6 +7,7 @@ namespace Tests\Feature\Api\V1;
 use App\Domain\Category\Models\Category;
 use App\Domain\Employee\Models\Department;
 use App\Domain\Employee\Models\Employee;
+use App\Domain\Finance\Models\Invoice;
 use App\Domain\Item\Models\Item;
 use App\Domain\Purchasing\Actions\PurchaseOrderWorkflow;
 use App\Domain\Purchasing\Actions\SaveDraftPurchaseOrder;
@@ -16,10 +17,12 @@ use App\Domain\Tax\Models\TaxRate;
 use App\Domain\Tax\Models\TaxType;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Notifications\SendQueuedNotifications;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -133,6 +136,106 @@ final class PurchaseOrderApiTest extends TestCase
     {
         $this->signIn($this->actor(['po.view']));
         $this->postJson('/api/v1/purchase-orders', $this->payload())->assertForbidden();
+    }
+
+    public function test_staff_hr_uploads_documentation_on_approved_po_and_order_shows_its_upload_status(): void
+    {
+        $disk = Storage::fake('local');
+        $staff = $this->actor(['po.view', 'po.update', 'po.submit', 'orders.view'], 'staff_hr');
+        $hr = $this->actor(['po.approve.hr'], 'hr');
+        $po = $this->draft($staff);
+        $this->submitAs($staff, $po);
+        $this->approveAs($hr, $po, 'hr');
+        $order = $po->fresh()->order;
+        $invoiceCount = DB::table('invoices')->count();
+        $paymentCount = DB::table('payments')->count();
+
+        $this->signIn($staff);
+        $url = "/api/v1/purchase-orders/{$po->id}/invoice-document";
+        $orderUrl = "/api/v1/orders/{$order->id}";
+        $this->getJson($url)->assertNotFound();
+        $this->getJson('/api/v1/orders')->assertOk()->assertJsonPath('data.0.purchase_order.invoice_upload_status', 'not_uploaded');
+        $this->post($url, [
+            'file' => UploadedFile::fake()->create('invoice-po.pdf', 12, 'application/pdf'),
+            'status' => 'cancelled', 'total_amount' => '1.00',
+        ], ['Accept' => 'application/json'])->assertOk()->assertJsonPath('data.invoice_upload_status', 'uploaded');
+        $this->getJson("/api/v1/purchase-orders/{$po->id}")->assertOk()
+            ->assertJsonPath('data.status', 'approved')->assertJsonPath('data.total_amount', '1000000.00')
+            ->assertJsonPath('data.invoice_file_name', 'invoice-po.pdf')->assertJsonMissingPath('data.invoice_file_path');
+        $this->getJson('/api/v1/orders')->assertOk()->assertJsonPath('data.0.purchase_order.invoice_upload_status', 'uploaded');
+        $this->getJson($orderUrl)->assertOk()->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.purchase_order.invoice_file_name', 'invoice-po.pdf');
+        $this->get($url)->assertOk()->assertDownload('invoice-po.pdf');
+
+        $oldPath = $po->fresh()->invoice_file_path;
+        $this->post($url, ['file' => UploadedFile::fake()->create('revisi.pdf', 12, 'application/pdf')],
+            ['Accept' => 'application/json'])->assertOk()->assertJsonPath('data.invoice_file_name', 'revisi.pdf');
+        $disk->assertMissing($oldPath);
+        $this->assertCount(1, $disk->allFiles('purchase-order-invoices'));
+
+        $this->signIn($this->actor(['orders.view']));
+        $this->get($orderUrl.'/invoice-document')->assertOk()->assertDownload('revisi.pdf');
+        $this->getJson($url)->assertForbidden();
+        $this->assertSame($invoiceCount, DB::table('invoices')->count());
+        $this->assertSame($paymentCount, DB::table('payments')->count());
+        $this->assertSame('0.000', $this->item->fresh()->stock_quantity);
+    }
+
+    public function test_po_invoice_upload_requires_permission_and_valid_file_and_gm_cannot_download_small_po_invoice(): void
+    {
+        $disk = Storage::fake('local');
+        $staff = $this->actor(['po.view', 'po.update', 'po.submit'], 'staff_hr');
+        $hr = $this->actor(['po.approve.hr'], 'hr');
+        $po = $this->draft($staff);
+        $this->submitAs($staff, $po);
+        $this->approveAs($hr, $po, 'hr');
+        $order = $po->fresh()->order;
+        $url = "/api/v1/purchase-orders/{$po->id}/invoice-document";
+        $this->signIn($staff);
+        $this->postJson($url, [])->assertUnprocessable()->assertJsonValidationErrors('file');
+        foreach ([UploadedFile::fake()->create('script.html', 1, 'text/html'),
+            UploadedFile::fake()->create('large.pdf', 5121, 'application/pdf')] as $invalid) {
+            $this->post($url, ['file' => $invalid], ['Accept' => 'application/json'])->assertUnprocessable()->assertJsonValidationErrors('file');
+        }
+        $this->assertSame([], $disk->allFiles('purchase-order-invoices'));
+        $this->signIn($this->actor(['po.view']));
+        $this->post($url, ['file' => UploadedFile::fake()->create('invoice.pdf', 1, 'application/pdf')],
+            ['Accept' => 'application/json'])->assertForbidden();
+        $this->signIn($this->actor(['po.view', 'orders.view'], 'general_manager'));
+        $this->getJson($url)->assertNotFound();
+        $this->getJson("/api/v1/orders/{$order->id}/invoice-document")->assertNotFound();
+    }
+
+    public function test_existing_invoice_attachment_is_available_on_order_and_is_preserved_when_po_gets_a_new_document(): void
+    {
+        $disk = Storage::fake('local');
+        $staff = $this->actor(['po.view', 'po.update', 'po.submit', 'orders.view'], 'staff_hr');
+        $hr = $this->actor(['po.approve.hr'], 'hr');
+        $po = $this->draft($staff);
+        $this->submitAs($staff, $po);
+        $this->approveAs($hr, $po, 'hr');
+        $order = $po->fresh()->order;
+        $disk->put('invoices/legacy.pdf', '%PDF-fixture');
+        $values = [
+            'supplier_id' => $this->supplier->id, 'purchase_order_id' => $po->id,
+            'invoice_date' => '2026-11-18', 'total_amount' => '1000.00', 'created_by' => $staff->id,
+        ];
+        Invoice::query()->create($values + ['invoice_number' => 'LEGACY-FILE'])
+            ->forceFill(['file_path' => 'invoices/legacy.pdf', 'file_name' => 'lama.pdf'])->save();
+        Invoice::query()->create($values + ['invoice_number' => 'WITHOUT-FILE']);
+        Invoice::query()->create($values + ['invoice_number' => 'DELETED-FILE'])
+            ->forceFill(['file_path' => 'invoices/deleted.pdf', 'file_name' => 'deleted.pdf'])->save();
+        Invoice::query()->where('invoice_number', 'DELETED-FILE')->delete();
+
+        $this->signIn($staff);
+        $url = "/api/v1/purchase-orders/{$po->id}/invoice-document";
+        $this->getJson('/api/v1/orders')->assertOk()->assertJsonPath('data.0.purchase_order.invoice_upload_status', 'uploaded')
+            ->assertJsonPath('data.0.purchase_order.invoice_file_name', 'lama.pdf');
+        $this->get("/api/v1/orders/{$order->id}/invoice-document")->assertOk()->assertDownload('lama.pdf');
+        $this->post($url, ['file' => UploadedFile::fake()->create('baru.pdf', 12, 'application/pdf')],
+            ['Accept' => 'application/json'])->assertOk();
+        $this->getJson('/api/v1/orders')->assertOk()->assertJsonPath('data.0.purchase_order.invoice_file_name', 'baru.pdf');
+        $disk->assertExists('invoices/legacy.pdf');
     }
 
     public function test_can_create_draft_and_preserve_snapshots_without_stock_mutation(): void

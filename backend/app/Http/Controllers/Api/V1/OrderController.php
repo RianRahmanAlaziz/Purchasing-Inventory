@@ -28,7 +28,7 @@ final class OrderController extends Controller
             'page' => ['sometimes', 'integer', 'min:1'],
         ]);
 
-        $query = Order::query()->visibleTo($request->user())->with('purchaseOrder');
+        $query = Order::query()->visibleTo($request->user())->with('purchaseOrder.legacyInvoiceDocument');
 
         if (isset($filters['status'])) {
             $query->where('status', $filters['status']);
@@ -81,7 +81,8 @@ final class OrderController extends Controller
         string $order,
         OrderReceiptProgress $progress
     ): JsonResponse {
-        $order = Order::query()->visibleTo($request->user())->with('purchaseOrder.items')->findOrFail($order);
+        $order = Order::query()->visibleTo($request->user())
+            ->with(['purchaseOrder.items', 'purchaseOrder.legacyInvoiceDocument'])->findOrFail($order);
         if ($order->purchaseOrder === null) {
             return ApiResponse::error('Purchase Order terkait tidak ditemukan.', 409);
         }
