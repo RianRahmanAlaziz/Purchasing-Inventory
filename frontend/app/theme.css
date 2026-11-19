@@ -147,23 +147,6 @@
   .date-label { color: #627fa5; }
   .date-label>.ui-icon { color: #568dd4; }
   .button { border-radius: 11px; padding: 11px 16px; font-size: 12px; }
-  .button.primary, .button.success { border-radius: 9px; color: white; }
-  .button.primary {
-    background: linear-gradient(120deg, #168bff, #2469d7);
-    border-color: #3489ed;
-    box-shadow: 0 3px 8px #168bff25;
-  }
-  .button.primary:hover { background: linear-gradient(120deg, #087ced, #245cc5); box-shadow: 0 4px 10px #168bff35; }
-  .button.secondary { background: #ffffffc4; color: #44668f; border-color: #ffffff; box-shadow: 0 4px 12px #335f9b0b; }
-  .button.secondary:hover { background: white; border-color: #c6dcfa; }
-  .button.success {
-    background: linear-gradient(120deg, #15804f, #126641);
-    border-color: #18895c;
-    box-shadow: 0 3px 8px #15804f25;
-  }
-  .button.success:hover:where(:not(:disabled)) { background: linear-gradient(120deg, #117344, #0e5837); box-shadow: 0 4px 10px #15804f35; }
-  .button.danger { background: #b4232b; border-color: #b4232b; color: white; }
-  .button.danger:hover:where(:not(:disabled)) { background: #941c23; border-color: #941c23; }
   .button:disabled { opacity: .5; box-shadow: none; }
   .overview-note {
     border: 1px solid #ffffffd9; border-radius: 21px;
@@ -193,7 +176,7 @@
   .stat-card>p { color: #7c90ac; font-size: 11px; }
   .stat-bottom { border-color: #dfe9f5; padding: 14px 0; margin-top: 20px; font-size: 10px; }
   .stat-bottom small { color: #8194ad; font-size: 9px; }
-  .stat-bottom>svg { color: #6b94c8; }
+  .stat-bottom>.ui-icon { color: #6b94c8; }
   .positive { color: #2586be; }
   .neutral { color: #8277bd; }
   .stat-card:first-child {
@@ -206,7 +189,7 @@
   .stat-card:first-child .stat-icon { background: linear-gradient(145deg, #ffffff24, #92cbff12); border-color: #ffffff29; color: #b9e6ff; }
   .stat-card:first-child .stat-bottom { border-color: #ffffff21; }
   .stat-card:first-child .positive { color: #89d9ff; }
-  .stat-card:first-child .stat-bottom small,.stat-card:first-child .stat-bottom>svg { color: #a5c3e8; }
+  .stat-card:first-child .stat-bottom small,.stat-card:first-child .stat-bottom>.ui-icon { color: #a5c3e8; }
   .panel { background: linear-gradient(140deg, #ffffffeb, #f4f9ffba); border: 1px solid #ffffffee; border-radius: 22px; box-shadow: 0 8px 25px #31548308, inset 0 1px 0 white; }
   .panel-header { padding: 23px 23px 19px; }
   .panel-header h2 { color: #2d476b; font-size: 15px; font-weight: 600; letter-spacing: -.3px; }
@@ -413,7 +396,7 @@
     .stat-card { padding: 14px 12px 0; }
     .stat-top { font-size: 10px; line-height: 1.6; }
     .stat-icon { width: 31px; height: 31px; border-radius: 11px; flex-shrink: 0; }
-    .stat-icon svg { width: 19px; height: 19px; }
+    .stat-icon .ui-icon { font-size: 19px !important; }
     .stat-value { font-size: 31px; }
     .stat-card>p { font-size: 10px; line-height: 1.7; }
     .stat-bottom { font-size: 8px; margin-top: 14px; padding-block: 12px; flex-wrap: wrap; }
@@ -714,4 +697,159 @@
 @media (prefers-reduced-motion: reduce) {
   .po-document-editor :is(input, select, textarea) { transition: none; }
   select::picker-icon { transition: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   Ikon Flaticon UIcons + tombol yang diselaraskan dengan warna navy sidebar.
+   --------------------------------------------------------------------------- */
+:root {
+  --navy-start: #2a5aa0;
+  --navy-end: #163e76;
+  --navy-hover-start: #214c86;
+  --navy-hover-end: #112f5c;
+  --focus-ring: 0 0 0 3px #168bff33;
+}
+
+.ui-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 1;
+  font-style: normal;
+}
+.ui-icon::before { display: block; line-height: 1; }
+
+@media screen {
+  .button {
+    min-height: 38px;
+    border-radius: 10px;
+    font-weight: 600;
+    letter-spacing: .1px;
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, color .15s ease, transform .1s ease;
+  }
+  .button .ui-icon { font-size: 15px !important; }
+  .button:active:not(:disabled) { transform: translateY(1px); }
+  .button:focus-visible, .icon-button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+  .button:disabled { cursor: not-allowed; }
+
+  .button.primary {
+    background: linear-gradient(120deg, var(--navy-start), var(--navy-end));
+    border-color: #1f4a85;
+    color: #fff;
+    box-shadow: 0 4px 12px #163e7630, inset 0 1px 0 #ffffff24;
+  }
+  .button.primary:hover:not(:disabled) {
+    background: linear-gradient(120deg, var(--navy-hover-start), var(--navy-hover-end));
+    box-shadow: 0 6px 16px #163e7640, inset 0 1px 0 #ffffff24;
+  }
+  .button.primary .ui-icon { color: #a7dcff; }
+
+  .button.secondary {
+    background: #ffffffd9;
+    border-color: #d3e1f3;
+    color: #24477a;
+    box-shadow: 0 3px 10px #335f9b0d;
+  }
+  .button.secondary:hover:not(:disabled) { background: #eef4ff; border-color: #a9c6ec; color: var(--navy-end); }
+  .button.secondary .ui-icon { color: #4a76b0; }
+
+  .button.ghost { background: transparent; border-color: transparent; color: var(--primary); box-shadow: none; }
+  .button.ghost:hover:not(:disabled) { background: var(--primary-soft); color: var(--navy-end); }
+
+  .button.success {
+    background: linear-gradient(120deg, #1f9463, #136a46);
+    border-color: #17805a;
+    color: #fff;
+    box-shadow: 0 4px 12px #15804f2b, inset 0 1px 0 #ffffff24;
+  }
+  .button.success:hover:not(:disabled) { background: linear-gradient(120deg, #17805a, #0e5837); }
+
+  .button.danger, .button.primary.danger {
+    background: linear-gradient(120deg, #d65b52, #a8322f);
+    border-color: #b8423c;
+    color: #fff;
+    box-shadow: 0 4px 12px #a8322f2b, inset 0 1px 0 #ffffff24;
+  }
+  .button.danger:hover:not(:disabled), .button.primary.danger:hover:not(:disabled) {
+    background: linear-gradient(120deg, #c44d45, #8f2926);
+  }
+
+  .icon-button { color: #5b7aa6; cursor: pointer; transition: background .15s ease, color .15s ease; }
+  .icon-button:hover:not(:disabled) { background: var(--primary-soft); color: var(--navy-end); }
+
+  .nav-link>.ui-icon { width: 22px; }
+}
+
+/* Kotak pencarian: tanpa outline kotak di dalam pill; sorot seluruh pill saat fokus. */
+.table-search input:focus,
+.table-search input:focus-visible,
+.global-search input:focus,
+.global-search input:focus-visible { outline: none; box-shadow: none; }
+.table-search, .global-search { transition: border-color .15s ease, box-shadow .15s ease, background .15s ease; }
+.table-search:focus-within,
+.global-search:focus-within {
+  border-color: #8fb4e6;
+  background: #fff;
+  box-shadow: 0 0 0 3px #168bff1f;
+}
+.table-search:focus-within > .ui-icon,
+.global-search:focus-within > .ui-icon { color: var(--navy-end); }
+
+/* Surat PO: tabel "Proses Persetujuan" mengikuti tema biru aplikasi (layar & cetak). */
+.po-approval-history table { border: 1px solid #c9dbf2; border-radius: 0; }
+.po-approval-history :is(th, td) { border-bottom: 1px solid #d6e4f5; }
+.po-approval-history thead .approval-title {
+  background: linear-gradient(120deg, #2a5aa0, #163e76);
+  color: #fff;
+  letter-spacing: .2px;
+  border-bottom: 0;
+}
+.po-approval-history tbody th { background: #e5efff; color: #163e76; }
+.po-approval-history tbody td { background: #fff; color: #24477a; }
+.po-approval-history tbody tr:nth-child(even) td { background: #f5f9ff; }
+
+/* Tombol close (X) pada modal: merah. */
+.icon-button:has(> .ui-icon-close) {
+  background: #fdecec;
+  color: #d14343;
+  transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+}
+.icon-button:has(> .ui-icon-close):hover:not(:disabled) {
+  background: #d14343;
+  color: #fff;
+  box-shadow: 0 4px 10px #d1434333;
+}
+.icon-button:has(> .ui-icon-close):focus-visible { box-shadow: 0 0 0 3px #d1434333; }
+
+/* Tombol ekspor: warna hijau Microsoft Excel. */
+@media screen {
+  .button.button-excel-outline {
+    background: #f1f8f4;
+    border-color: #b7dcc7;
+    color: #185c37;
+    box-shadow: 0 3px 10px #2173460f;
+  }
+  .button.button-excel-outline .ui-icon { color: #107c41; }
+  .button.button-excel-outline:hover:not(:disabled) {
+    background: linear-gradient(120deg, #21a366, #107c41);
+    border-color: #107c41;
+    color: #fff;
+    box-shadow: 0 5px 14px #107c4133;
+  }
+  .button.button-excel-outline:hover:not(:disabled) .ui-icon { color: #fff; }
+
+  .button.button-excel {
+    background: linear-gradient(120deg, #21a366, #107c41);
+    border-color: #0e6e3a;
+    color: #fff;
+    box-shadow: 0 4px 12px #107c4130, inset 0 1px 0 #ffffff24;
+  }
+  .button.button-excel .ui-icon { color: #d6f5e3; }
+  .button.button-excel:hover:not(:disabled) {
+    background: linear-gradient(120deg, #185c37, #0e4f2c);
+    box-shadow: 0 6px 16px #107c4140, inset 0 1px 0 #ffffff24;
+  }
+  .button-excel-outline:focus-visible, .button-excel:focus-visible { box-shadow: 0 0 0 3px #21734633; }
 }

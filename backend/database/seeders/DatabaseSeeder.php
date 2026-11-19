@@ -19,5 +19,9 @@ class DatabaseSeeder extends Seeder
             SuperAdminUserSeeder::class,
             PpnIndonesia2026Seeder::class,
         ]);
+
+        if (app()->environment('local')) {
+            $this->call(DemoDataSeeder::class);
+        }
     }
 }

@@ -178,7 +178,7 @@ input::placeholder {
   color: #939a95
 }
 
-.workspace>svg {
+.workspace>.ui-icon {
   margin-left: auto
 }
 
@@ -352,7 +352,8 @@ input::placeholder {
   position: relative
 }
 
-.notification-button i {
+/* Titik indikator lama; ikon Flaticon juga elemen <i>, jadi kecualikan .ui-icon. */
+.notification-button i:not(.ui-icon) {
   position: absolute;
   right: 8px;
   top: 6px;
@@ -438,7 +439,7 @@ input::placeholder {
   margin-top: 5px
 }
 
-.profile-link>svg {
+.profile-link>.ui-icon {
   margin-left: 7px;
   color: #8b968e
 }
@@ -704,7 +705,7 @@ input::placeholder {
   color: #a5ada7
 }
 
-.stat-bottom>svg {
+.stat-bottom>.ui-icon {
   margin-left: auto;
   color: #a6b2a9
 }
@@ -1963,7 +1964,7 @@ td>small {
     display: none
   }
 
-  .profile-link>svg {
+  .profile-link>.ui-icon {
     display: none
   }
 
@@ -2143,9 +2144,8 @@ td>small {
     border-radius: 7px
   }
 
-  .stat-icon svg {
-    width: 18px;
-    height: 18px
+  .stat-icon .ui-icon {
+    font-size: 18px !important
   }
 
   .stat-value {
@@ -2169,9 +2169,8 @@ td>small {
     font-size: 8px
   }
 
-  .stat-bottom>svg {
-    width: 14px;
-    height: 14px
+  .stat-bottom>.ui-icon {
+    font-size: 14px !important
   }
 
   .charts-grid {
@@ -2475,7 +2474,7 @@ textarea:focus-visible {
   line-height: 1.8
 }
 
-.company-notice svg {
+.company-notice .ui-icon {
   margin-top: 3px
 }
 
@@ -3721,10 +3720,10 @@ textarea:focus-visible {
 }
 
 .pagination-nav button.is-current {
-  background: linear-gradient(120deg, #168bff, #2469d7);
-  border-color: #3489ed;
+  background: linear-gradient(120deg, #2a5aa0, #163e76);
+  border-color: #1f4a85;
   color: white;
-  box-shadow: 0 3px 8px #168bff25
+  box-shadow: 0 3px 8px #163e7630
 }
 
 .pagination-ellipsis {
@@ -3735,7 +3734,7 @@ textarea:focus-visible {
   color: #8b9fba
 }
 
-.pagination-step.previous svg {
+.pagination-step.previous .ui-icon {
   transform: rotate(180deg)
 }
 

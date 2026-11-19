@@ -40,14 +40,14 @@ function ExportDialog({ filename, columns, records, dateLabel = "Tanggal pencata
       {period !== "all" && undated > 0 && <p className="form-hint">{undated} data tanpa tanggal tidak disertakan. Pilih Semua tanggal untuk menyertakannya.</p>}
       {!error && !filtered.length && <p className="form-hint">Tidak ada data pada periode ini. Pilih periode lain.</p>}
       {(error || downloadError) && <p className="form-error" role="alert">{error || downloadError}</p>}
-      <div className="modal-actions"><Button type="button" variant="secondary" onClick={close}>Batal</Button><Button type="submit" disabled={!!error || !filtered.length}><Icon name="download" size={16}/> Unduh CSV</Button></div>
+      <div className="modal-actions"><Button type="button" variant="secondary" onClick={close}>Batal</Button><Button type="submit" className="button-excel" disabled={!!error || !filtered.length}><Icon name="download" size={16}/> Unduh CSV</Button></div>
     </form>
   </Modal>;
 }
 
 export function ExportButton(props: Props) {
   const [today, setToday] = useState<string | null>(null);
-  return <><Button variant="secondary" disabled={props.disabled} onClick={() => setToday(workspaceToday())}><Icon name="download" size={16}/> {props.label || "Ekspor CSV"}</Button>
+  return <><Button variant="secondary" className="button-excel-outline" disabled={props.disabled} onClick={() => setToday(workspaceToday())}><Icon name="excel" size={16}/> {props.label || "Ekspor CSV"}</Button>
     {today && <ExportDialog {...props} today={today} close={() => setToday(null)}/>}
   </>;
 }

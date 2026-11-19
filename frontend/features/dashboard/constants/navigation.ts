@@ -1,35 +1,37 @@
 import type { ApiUser } from "@/lib/api";
 
-type NavigationItem = { slug: string; name: string; icon: string; permission?: string; roles?: string[] };
+// `alsoRequires`: izin tambahan agar menu tampil. Dipakai bila izin utama juga dibutuhkan
+// modul lain sebagai lookup (mis. items.view untuk pilihan barang di form PO).
+type NavigationItem = { slug: string; name: string; icon: string; permission?: string; alsoRequires?: string[]; roles?: string[] };
 
 export const navigation: { title: string; items: NavigationItem[]; masterData?: boolean }[] = [
-  { title: "UTAMA", items: [{ slug: "dashboard", name: "Dashboard", icon: "grid", permission: "reports.view" }] },
+  { title: "UTAMA", items: [{ slug: "dashboard", name: "Dashboard", icon: "dashboard", permission: "reports.view" }] },
   { title: "PURCHASING", items: [
-    { slug: "purchase-orders", name: "Purchase Order", icon: "cart", permission: "po.view" },
-    { slug: "approvals", name: "Persetujuan PO", icon: "file", permission: "po.view", roles: ["hr", "general_manager", "super_admin"] },
-    { slug: "orders", name: "Order Management", icon: "file", permission: "orders.view" },
-    { slug: "goods-receipts", name: "Penerimaan Barang", icon: "box", permission: "grn.view" },
-    { slug: "invoices", name: "Tagihan Supplier", icon: "wallet", permission: "invoices.view" },
-    { slug: "payments", name: "Pembayaran", icon: "wallet", permission: "payments.view" },
-    { slug: "receipts", name: "Kuitansi & Dokumen", icon: "file", permission: "documents.view" },
+    { slug: "purchase-orders", name: "Purchase Order", icon: "cart", permission: "po.view", alsoRequires: ["po.create"] },
+    { slug: "approvals", name: "Persetujuan PO", icon: "approval", permission: "po.view", roles: ["hr", "general_manager", "super_admin"] },
+    { slug: "orders", name: "Order Management", icon: "order", permission: "orders.view" },
+    { slug: "goods-receipts", name: "Penerimaan Barang", icon: "receiving", permission: "grn.view" },
+    { slug: "invoices", name: "Tagihan Supplier", icon: "invoice", permission: "invoices.view" },
+    { slug: "payments", name: "Pembayaran", icon: "payment", permission: "payments.view" },
+    { slug: "receipts", name: "Kuitansi & Dokumen", icon: "document-signed", permission: "documents.view" },
   ] },
   { title: "INVENTORY", items: [
-    { slug: "items", name: "Stok Barang", icon: "box", permission: "items.view" },
+    { slug: "items", name: "Stok Barang", icon: "stock", permission: "items.view", alsoRequires: ["inventory.view"] },
     { slug: "stock-movements", name: "Mutasi Stok", icon: "arrows", permission: "inventory.view" },
     { slug: "distributions", name: "Distribusi Barang", icon: "truck", permission: "distribution.view" },
   ] },
   { title: "MASTER DATA", masterData: true, items: [
-    { slug: "companies", name: "Profil Perusahaan", icon: "box", permission: "companies.view" },
-    { slug: "suppliers", name: "Supplier", icon: "users", permission: "suppliers.view" },
-    { slug: "categories", name: "Kategori Produk", icon: "category", permission: "categories.view" },
-    { slug: "tax-types", name: "Jenis Pajak", icon: "category", permission: "taxes.view" },
-    { slug: "tax-rates", name: "Tarif Pajak", icon: "wallet", permission: "taxes.view" },
-    { slug: "departments", name: "Departemen", icon: "grid", permission: "departments.view" },
-    { slug: "employees", name: "Karyawan", icon: "users", permission: "employees.view" },
+    { slug: "companies", name: "Profil Perusahaan", icon: "company", permission: "companies.view" },
+    { slug: "suppliers", name: "Supplier", icon: "supplier", permission: "suppliers.view" },
+    { slug: "categories", name: "Kategori Produk", icon: "tag", permission: "categories.view" },
+    { slug: "tax-types", name: "Jenis Pajak", icon: "tax", permission: "taxes.view" },
+    { slug: "tax-rates", name: "Tarif Pajak", icon: "percent", permission: "taxes.view" },
+    { slug: "departments", name: "Departemen", icon: "department", permission: "departments.view" },
+    { slug: "employees", name: "Karyawan", icon: "employee", permission: "employees.view" },
   ] },
   { title: "ADMINISTRASI", items: [
     { slug: "users", name: "Pengguna", icon: "users", permission: "users.view" },
-    { slug: "access", name: "Role & Izin", icon: "settings", permission: "roles.manage" },
+    { slug: "access", name: "Role & Izin", icon: "shield", permission: "roles.manage" },
   ] },
 ];
 
@@ -46,6 +48,7 @@ export function visibleNavigation(user: ApiUser) {
       if (item.slug === "purchase-orders" && !isSuperAdmin(user)
         && (user.roles.includes("hr") || user.roles.includes("general_manager"))) return false;
       if (item.roles && !item.roles.some(role => user.roles.includes(role))) return false;
+      if (item.alsoRequires && !item.alsoRequires.every(permission => permissions.has(permission))) return false;
       return item.permission !== undefined && permissions.has(item.permission);
     }),
   })).filter(group => group.items.length > 0);
