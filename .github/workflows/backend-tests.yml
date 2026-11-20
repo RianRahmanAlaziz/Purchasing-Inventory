@@ -1,0 +1,102 @@
+name: Backend Laravel Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Laravel 13 / PHP 8.3 / MySQL 8
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      mysql:
+        image: mysql:8.0
+
+        env:
+          MYSQL_ROOT_PASSWORD: root_ci_password
+          MYSQL_DATABASE: purchasing_test
+          MYSQL_USER: purchasing_ci
+          MYSQL_PASSWORD: ci_test_password
+
+        ports:
+          - 3306:3306
+
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_ci_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=15
+
+    env:
+      APP_ENV: testing
+      APP_DEBUG: "true"
+
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: purchasing_test
+      DB_USERNAME: purchasing_ci
+      DB_PASSWORD: ci_test_password
+      DB_URL: ""
+
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: mbstring, intl, pdo_mysql, pdo_sqlite, sqlite3, bcmath, gd, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress --optimize-autoloader
+
+      - name: Verify isolated testing environment
+        run: |
+          php -r '
+          if (
+              getenv("APP_ENV") !== "testing" ||
+              getenv("DB_DATABASE") !== "purchasing_test"
+          ) {
+              fwrite(STDERR, "Unsafe testing environment\n");
+              exit(1);
+          }
+          '
+
+      - name: Generate temporary application key
+        run: echo "APP_KEY=$(php artisan key:generate --show)" >> "$GITHUB_ENV"
+
+      - name: Clear configuration cache
+        run: php artisan config:clear
+
+      - name: Run database migrations
+        run: php artisan migrate --env=testing --force --no-interaction
+
+      - name: Run Laravel tests
+        run: php artisan test
