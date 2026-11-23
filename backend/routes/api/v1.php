@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\V1\ApplicationController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\CompanyController;
@@ -50,6 +51,7 @@ Route::prefix('auth')->group(function (): void {
 });
 
 Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function (): void {
+    Route::get('/erp/apps', ApplicationController::class)->name('erp.apps.index');
     $masterAccess = RoleMiddleware::using('super_admin');
 
     Route::prefix('notifications')->name('notifications.')->group(function (): void {
@@ -105,8 +107,8 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::delete('/{document}', [DocumentController::class, 'destroy'])->whereNumber('document')->middleware('can:documents.manage')->name('destroy');
         Route::get('/{document}/download', [DocumentController::class, 'download'])->whereNumber('document')->middleware('can:documents.view')->name('download');
         foreach (['send', 'receive', 'verify'] as $action) {
-            Route::post('/{document}/'.$action, [DocumentController::class, 'transition'])->whereNumber('document')->defaults('action', $action)
-                ->middleware('can:documents.'.$action)->name($action);
+            Route::post('/{document}/' . $action, [DocumentController::class, 'transition'])->whereNumber('document')->defaults('action', $action)
+                ->middleware('can:documents.' . $action)->name($action);
         }
     });
 
