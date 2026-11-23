@@ -31,7 +31,6 @@ function options(path: string, idLabel: string, nameLabel = "name"): OptionSourc
   };
 }
 
-const distributionRecipients = options("distributions/recipients", "employee_number");
 const departments = options("departments?is_active=1", "code");
 const suppliers = options("suppliers?is_active=1", "code");
 const items = options("items?is_active=1", "sku");
@@ -319,27 +318,26 @@ export const apiModules: Record<string, ApiModule> = {
     operations: row => pending(row) ? [{ label: "Konfirmasi penerimaan", suffix: "confirm", permission: "grn.confirm" }] : [],
   },
   distributions: {
-    endpoint: "distributions", title: "Distribusi Barang", description: "Ajukan permintaan barang, proses pengiriman, dan konfirmasi penerimaan.",
-    mutations: { create: user => user.employee_id !== null || user.permissions.includes("distribution.create") },
+    endpoint: "distributions", title: "Distribusi Barang", description: "Catat penerima, siapkan barang, lalu selesaikan penyerahan tanpa persetujuan tambahan.",
+    mutations: { create: "distribution.create" },
     loadDetail: true,
-    columns: [{ key: "distribution_number", label: "No. Distribusi" }, { key: "employee.name", label: "Penerima" },
-      { key: "requested_at", label: "Tanggal permintaan", format: "date" }, status],
+    columns: [{ key: "distribution_number", label: "No. Distribusi" }, { key: "recipient_name", label: "Penerima" },
+      { key: "requested_at", label: "Tanggal distribusi", format: "date" }, status],
     date: "requested_at", status: "status",
-    details: [{ key: "purpose", label: "Keperluan" }, { key: "rejection_reason", label: "Alasan penolakan" }, { key: "received_at", label: "Diterima", format: "datetime" }],
+    details: [{ key: "purpose", label: "Keperluan" }, { key: "sent_at", label: "Diserahkan", format: "datetime" }],
     fields: [
-      { key: "employee_id", label: "Penerima (kosongkan untuk diri sendiri)", type: "id", source: distributionRecipients, omitEmpty: true },
+      { key: "recipient_name", label: "Nama penerima", required: true, maxLength: 200 },
       { key: "purpose", label: "Keperluan", type: "textarea", required: true, maxLength: 5000 },
     ],
     lines: { limit: 50, fields: [itemField, quantity, lineNotes] },
     groups: [{ key: "items", title: "Rincian barang", columns: [...lineColumns, quantity, notes] }],
-    print: { label: "Surat Jalan", available: row => ["preparing", "sent", "received_by_employee"].includes(String(row.status)) },
-    operations: (row, user) => {
-      if (row.status === "sent" && row.employee_id === user.employee_id) return [{ label: "Konfirmasi barang diterima", suffix: "receive" }];
+    print: { label: "Surat Jalan", available: row => ["preparing", "sent", "completed", "received_by_employee"].includes(String(row.status)) },
+    operations: row => {
       switch (row.status) {
-        case "requested": return row.requested_by === user.id ? [] : [{ label: "Setujui permintaan", suffix: "approve", permission: "distribution.approve" },
-          { label: "Tolak permintaan", suffix: "reject", reason: true, permission: "distribution.reject" }];
+        case "requested":
         case "approved": return [{ label: "Mulai persiapan", suffix: "prepare", permission: "distribution.prepare" }];
-        case "preparing": return [{ label: "Kirim barang", suffix: "send", permission: "distribution.send" }];
+        case "preparing":
+        case "sent": return [{ label: "Selesaikan distribusi", suffix: "send", permission: "distribution.send" }];
         default: return [];
       }
     },

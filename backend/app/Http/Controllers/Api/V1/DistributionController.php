@@ -116,7 +116,7 @@ final class DistributionController extends Controller
         return $this->perform($request, fn () => $action->execute(
             $request->validated(),
             $request->user()
-        ), 'Permintaan distribusi dibuat.', 201);
+        ), 'Distribusi dibuat dan siap diserahkan.', 201);
     }
 
     public function approve(Request $request, Distribution $distribution, DistributionWorkflow $action): JsonResponse
@@ -153,7 +153,7 @@ final class DistributionController extends Controller
         return $this->perform(
             $request,
             fn () => $action->send($distribution, $request->user()),
-            'Distribusi telah dikirim.'
+            'Distribusi selesai. Barang telah diserahkan.'
         );
     }
 

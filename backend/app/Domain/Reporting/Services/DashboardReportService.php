@@ -32,7 +32,7 @@ final class DashboardReportService
 
     private const DISTRIBUTION_STATUSES = [
         'requested', 'approved', 'preparing', 'sent',
-        'received_by_employee', 'cancelled',
+        'received_by_employee', 'completed', 'cancelled',
     ];
 
     private const MOVEMENT_TYPES = ['adjustment', 'grn_in', 'distribution_out'];

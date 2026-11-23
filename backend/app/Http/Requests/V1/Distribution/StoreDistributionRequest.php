@@ -13,7 +13,7 @@ final class StoreDistributionRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
-        if (! $this->has('employee_id')) {
+        if (! $this->has('employee_id') && ! $this->filled('recipient_name')) {
             $mine = $this->user()?->employee()
                 ->where('is_active', true)->value('id');
             if ($mine !== null) {
@@ -34,6 +34,7 @@ final class StoreDistributionRequest extends FormRequest
         $mine = $user->employee()->where('is_active', true)->value('id');
 
         return $mine !== null
+            && ! $this->filled('recipient_name')
             && (int) $this->input('employee_id') === (int) $mine
             && $user->tokenCan('employee:self');
     }
@@ -42,8 +43,9 @@ final class StoreDistributionRequest extends FormRequest
     {
         return [
             'employee_id' => [
-                'required', 'integer', Rule::exists('employees', 'id')->where('is_active', true),
+                'required_without:recipient_name', 'nullable', 'integer', Rule::exists('employees', 'id')->where('is_active', true),
             ],
+            'recipient_name' => ['required_without:employee_id', 'nullable', 'string', 'max:200', 'prohibits:employee_id'],
             'purpose' => ['required', 'string', 'min:5', 'max:5000'],
             'items' => ['required', 'array', 'min:1', 'max:50'],
             'items.*.item_id' => [
@@ -72,6 +74,7 @@ final class StoreDistributionRequest extends FormRequest
             'approved_by' => ['prohibited'],
             'sent_by' => ['prohibited'],
             'received_by' => ['prohibited'],
+            'recipient_name_snapshot' => ['prohibited'],
         ];
     }
 }

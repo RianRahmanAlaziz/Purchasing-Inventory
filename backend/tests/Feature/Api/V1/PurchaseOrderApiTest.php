@@ -351,12 +351,12 @@ final class PurchaseOrderApiTest extends TestCase
             ->assertJsonPath('data.requires_gm_approval', false);
     }
 
-    public function test_below_ten_million_needs_only_hr(): void
+    public function test_below_twenty_million_needs_only_hr(): void
     {
         $maker = $this->actor(['po.submit']);
         $hr = $this->actor(['po.approve.hr'], 'hr');
-        $po = $this->draft($maker, '9999999.99');
-        $this->assertSame('10000000.00', $po->approval_threshold_amount);
+        $po = $this->draft($maker, '19999999.99');
+        $this->assertSame('20000000.00', $po->approval_threshold_amount);
         $this->assertFalse($po->requires_gm_approval);
 
         $this->submitAs($maker, $po);
@@ -367,13 +367,13 @@ final class PurchaseOrderApiTest extends TestCase
         $this->assertDatabaseCount('orders', 1);
     }
 
-    public function test_exactly_ten_million_needs_only_hr_and_creates_one_order(): void
+    public function test_exactly_twenty_million_needs_only_hr_and_creates_one_order(): void
     {
         Queue::fake([SendQueuedNotifications::class]);
         $maker = $this->actor(['po.view', 'po.submit']);
         $hr = $this->actor(['po.view', 'po.approve.hr'], 'hr');
         $gm = $this->actor(['po.view', 'po.approve.gm'], 'general_manager');
-        $po = $this->draft($maker, '10000000.00');
+        $po = $this->draft($maker, '20000000.00');
         $this->submitAs($maker, $po);
         $this->assertDatabaseHas('purchase_orders', ['id' => $po->id, 'requires_gm_approval' => false]);
         $this->assertDatabaseCount('purchase_order_approvals', 1);
@@ -388,15 +388,15 @@ final class PurchaseOrderApiTest extends TestCase
         $this->assertSame(0, $gm->notifications()->count());
     }
 
-    public function test_above_ten_million_requires_hr_then_gm(): void
+    public function test_above_twenty_million_requires_hr_then_gm(): void
     {
         $maker = $this->actor(['po.submit']);
         $hr = $this->actor(['po.approve.hr'], 'hr');
         $gm = $this->actor(['po.approve.gm'], 'general_manager');
-        $po = $this->draft($maker, '10000000.01');
+        $po = $this->draft($maker, '20000000.01');
         $this->submitAs($maker, $po);
         $this->assertDatabaseCount('purchase_order_approvals', 2);
-        $this->assertDatabaseHas('purchase_orders', ['id' => $po->id, 'requires_gm_approval' => true, 'approval_threshold_amount' => '10000000.00']);
+        $this->assertDatabaseHas('purchase_orders', ['id' => $po->id, 'requires_gm_approval' => true, 'approval_threshold_amount' => '20000000.00']);
 
         $this->signIn($gm);
         $this->postJson("/api/v1/purchase-orders/{$po->id}/approvals/gm/approve")
@@ -419,10 +419,10 @@ final class PurchaseOrderApiTest extends TestCase
         $hr = $this->actor(['po.view', 'po.approve.hr'], 'hr');
         $gm = $this->actor(['po.view', 'po.approve.gm'], 'general_manager');
         $admin = $this->actor(['po.view'], 'super_admin');
-        $above = $this->draft($maker, '10000000.01');
-        $below = $this->draft($maker, '9999999.99');
-        $atLimit = $this->draft($maker, '10000000.00');
-        $draft = $this->draft($maker, '11000000.00');
+        $above = $this->draft($maker, '20000000.01');
+        $below = $this->draft($maker, '19999999.99');
+        $atLimit = $this->draft($maker, '20000000.00');
+        $draft = $this->draft($maker, '21000000.00');
         foreach ([$above, $below, $atLimit] as $po) {
             $this->submitAs($maker, $po);
         }
@@ -456,7 +456,7 @@ final class PurchaseOrderApiTest extends TestCase
         $maker = $this->actor(['po.view', 'po.submit'], 'staff_hr');
         $hr = $this->actor(['po.view', 'po.approve.hr'], 'hr');
         $gm = $this->actor(['po.view', 'po.approve.gm'], 'general_manager');
-        $po = $this->draft($maker, '10000000.01');
+        $po = $this->draft($maker, '20000000.01');
 
         $this->submitAs($maker, $po);
         $this->submitAs($maker, $po);
@@ -565,7 +565,7 @@ final class PurchaseOrderApiTest extends TestCase
         $maker = $this->actor(['po.submit', 'po.view']);
         $hr = $this->actor(['po.approve.hr'], 'hr');
         $gm = $this->actor(['po.approve.gm'], 'general_manager');
-        $po = $this->draft($maker, '10000000.01');
+        $po = $this->draft($maker, '20000000.01');
 
         $this->signIn($maker);
         $this->postJson("/api/v1/purchase-orders/{$po->id}/submit")
@@ -654,7 +654,7 @@ final class PurchaseOrderApiTest extends TestCase
         $maker = $this->actor(['po.view', 'po.submit']);
         $hr = $this->actor(['po.view', 'po.reject.hr'], 'hr');
         $gm = $this->actor(['po.view', 'po.approve.gm'], 'general_manager');
-        $po = $this->draft($maker, '10000000.01');
+        $po = $this->draft($maker, '20000000.01');
         $this->submitAs($maker, $po);
         $this->signIn($hr);
         $this->postJson("/api/v1/purchase-orders/{$po->id}/approvals/hr/reject", ['reason' => 'Tidak sesuai'])
@@ -802,7 +802,7 @@ final class PurchaseOrderApiTest extends TestCase
     {
         $maker = $this->actor(['po.submit']);
         $both = $this->actor(['po.approve.hr', 'po.approve.gm'], 'super_admin');
-        $po = $this->draft($maker, '10000000.01');
+        $po = $this->draft($maker, '20000000.01');
         $this->submitAs($maker, $po);
         $this->approveAs($both, $po, 'hr');
         $this->signIn($both);

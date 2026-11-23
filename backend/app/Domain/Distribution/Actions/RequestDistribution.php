@@ -23,14 +23,20 @@ final class RequestDistribution
     public function execute(array $data, User $actor): Distribution
     {
         return DB::transaction(function () use ($data, $actor): Distribution {
-            $employee = Employee::query()->findOrFail($data['employee_id']);
+            $employee = isset($data['employee_id'])
+                ? Employee::query()->findOrFail($data['employee_id']) : null;
+            $recipientName = trim((string) ($data['recipient_name'] ?? $employee?->name));
 
-            if (! $employee->is_active) {
+            if ($employee !== null && ! $employee->is_active) {
                 throw new DistributionConflict('Karyawan penerima harus aktif.');
+            }
+            if ($recipientName === '') {
+                throw new DistributionConflict('Nama penerima wajib diisi.');
             }
 
             if (! $actor->can('distribution.create')) {
-                if ((int) $employee->user_id !== (int) $actor->id
+                if ($employee === null || isset($data['recipient_name'])
+                    || (int) $employee->user_id !== (int) $actor->id
                     || ! $actor->tokenCan('employee:self')) {
                     throw new AuthorizationException('Hanya boleh meminta distribusi untuk diri sendiri.');
                 }
@@ -54,10 +60,11 @@ final class RequestDistribution
 
             $distribution = Distribution::query()->create([
                 'distribution_number' => 'DIST-'.(string) Str::ulid(),
-                'employee_id' => $employee->id,
+                'employee_id' => $employee?->id,
+                'recipient_name_snapshot' => $recipientName,
                 'requested_by' => $actor->id,
                 'purpose' => $data['purpose'],
-                'status' => DistributionStatus::Requested->value,
+                'status' => DistributionStatus::Preparing->value,
                 'requested_at' => now(),
             ]);
             ShortReference::assign($distribution, 'distribution_number', 'DIST');
@@ -82,9 +89,9 @@ final class RequestDistribution
 
             $distribution->events()->create([
                 'actor_id' => $actor->id,
-                'action' => 'requested',
+                'action' => 'preparing',
                 'from_status' => null,
-                'to_status' => DistributionStatus::Requested->value,
+                'to_status' => DistributionStatus::Preparing->value,
                 'created_at' => now(),
             ]);
 

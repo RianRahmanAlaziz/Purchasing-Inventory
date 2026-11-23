@@ -6,7 +6,7 @@ import { formatQuantity } from "@/lib/quantity";
 
 export function DistributionLetter({ row, close }: { row: Row; close: () => void }) {
   const number = String(row.distribution_number);
-  const recipient = String(get(row, "employee.name") ?? "—");
+  const recipient = String(row.recipient_name ?? get(row, "employee.name") ?? "—");
   const department = String(get(row, "employee.department_name") ?? "—");
   const date = datePart(row.sent_at).split("-").reverse().join("/");
 

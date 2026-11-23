@@ -110,30 +110,29 @@ final class DistributionApiTest extends TestCase
         ];
     }
 
-    private function requested(): Distribution
+    private function legacyRequested(): Distribution
     {
-        $this->as($this->staff);
-        $result = $this->postJson('/api/v1/distributions', $this->payload())->assertCreated();
+        // Dokumen lama tetap dapat diproses tanpa mengubah riwayat persetujuannya.
+        $distribution = Distribution::query()->create([
+            'distribution_number' => 'DIST-LEGACY-'.Str::ulid(),
+            'employee_id' => $this->employee->id,
+            'recipient_name_snapshot' => $this->employee->name,
+            'requested_by' => $this->staff->id,
+            'purpose' => 'Perlengkapan kerja kantor',
+            'status' => 'requested', 'requested_at' => now(),
+        ]);
+        $distribution->items()->create($this->payload()['items'][0]);
 
-        return Distribution::query()->findOrFail($result->json('data.id'));
-    }
-
-    private function approved(): Distribution
-    {
-        $distribution = $this->requested();
-        $this->as($this->manager);
-        $this->postJson($this->url($distribution, 'approve'))->assertOk();
-
-        return $distribution->fresh();
+        return $distribution;
     }
 
     private function preparing(): Distribution
     {
-        $distribution = $this->approved();
         $this->as($this->staff);
-        $this->postJson($this->url($distribution, 'prepare'))->assertOk();
+        $result = $this->postJson('/api/v1/distributions', $this->payload())
+            ->assertCreated()->assertJsonPath('data.status', 'preparing');
 
-        return $distribution->fresh();
+        return Distribution::query()->findOrFail($result->json('data.id'));
     }
 
     private function stock(string $qty = '10.000', ?Item $item = null): void
@@ -169,7 +168,7 @@ final class DistributionApiTest extends TestCase
         unset($payload['employee_id']);
         $this->postJson('/api/v1/distributions', $payload)
             ->assertCreated()
-            ->assertJsonPath('data.status', 'requested')
+            ->assertJsonPath('data.status', 'preparing')
             ->assertJsonPath('data.employee_id', $this->employee->id)
             ->assertJsonPath('data.items.0.quantity', '3.000');
         $this->assertSame('0.000', (string) $this->item->fresh()->stock_quantity);
@@ -190,10 +189,62 @@ final class DistributionApiTest extends TestCase
     {
         $this->as($this->staff);
         $response = $this->postJson('/api/v1/distributions', $this->payload())
-            ->assertCreated()->assertJsonPath('data.status', 'requested');
+            ->assertCreated()->assertJsonPath('data.status', 'preparing');
         $this->assertSame($this->staff->id, $response->json('data.requested_by'));
         $response->assertJsonPath('data.distribution_number', sprintf('DIST-%06d', $response->json('data.id')));
-        $this->assertDatabaseHas('distribution_events', ['distribution_id' => $response->json('data.id'), 'action' => 'requested']);
+        $this->assertDatabaseHas('distribution_events', ['distribution_id' => $response->json('data.id'), 'action' => 'preparing']);
+    }
+
+    public function test_staff_can_distribute_to_unregistered_name_and_complete_without_approval_or_recipient_account(): void
+    {
+        $this->stock();
+        $employeeCount = Employee::query()->count();
+        $userCount = User::query()->count();
+        $this->as($this->staff);
+        $payload = $this->payload();
+        unset($payload['employee_id']);
+        $payload['recipient_name'] = '  Penerima Baru Tanpa Akun  ';
+        $id = $this->postJson('/api/v1/distributions', $payload)->assertCreated()
+            ->assertJsonPath('data.status', 'preparing')
+            ->assertJsonPath('data.recipient_name', 'Penerima Baru Tanpa Akun')
+            ->assertJsonPath('data.employee_id', null)
+            ->assertJsonPath('data.approved_by', null)->json('data.id');
+
+        $this->assertSame('10.000', (string) $this->item->fresh()->stock_quantity);
+        foreach ([1, 2] as $attempt) {
+            $this->postJson('/api/v1/distributions/'.$id.'/send')->assertOk()
+                ->assertJsonPath('data.status', 'completed')
+                ->assertJsonPath('data.sent_by', $this->staff->id)
+                ->assertJsonPath('data.approved_by', null)
+                ->assertJsonPath('data.received_by', null);
+        }
+        $this->getJson('/api/v1/distributions/'.$id)->assertOk()
+            ->assertJsonPath('data.recipient_name', 'Penerima Baru Tanpa Akun');
+        $this->getJson('/api/v1/distributions?status=completed')->assertOk()
+            ->assertJsonPath('data.0.id', $id);
+        $this->assertSame('7.000', (string) $this->item->fresh()->stock_quantity);
+        $this->assertSame(1, $this->outCount());
+        $this->assertSame($employeeCount, Employee::query()->count());
+        $this->assertSame($userCount, User::query()->count());
+        $this->assertSame(['preparing', 'completed'], DB::table('distribution_events')
+            ->where('distribution_id', $id)->orderBy('id')->pluck('action')->all());
+    }
+
+    public function test_recipient_name_is_required_and_cannot_be_mixed_with_employee_id(): void
+    {
+        $this->as($this->staff);
+        $payload = $this->payload();
+        $this->postJson('/api/v1/distributions', $payload + ['recipient_name' => 'Nama bebas'])
+            ->assertUnprocessable()->assertJsonValidationErrors('recipient_name');
+        unset($payload['employee_id']);
+        $this->postJson('/api/v1/distributions', $payload + ['recipient_name' => '   '])
+            ->assertUnprocessable()->assertJsonValidationErrors('recipient_name');
+        $this->postJson('/api/v1/distributions', $payload + ['recipient_name' => str_repeat('x', 201)])
+            ->assertUnprocessable()->assertJsonValidationErrors('recipient_name');
+
+        $this->as($this->employeeUser, ['employee:self']);
+        $this->postJson('/api/v1/distributions', $payload + ['recipient_name' => 'Nama orang lain'])
+            ->assertForbidden();
     }
 
     public function test_user_without_role_or_employee_cannot_request(): void
@@ -257,7 +308,7 @@ final class DistributionApiTest extends TestCase
 
     public function test_employee_can_only_view_own_distributions(): void
     {
-        $owned = $this->requested();
+        $owned = $this->legacyRequested();
         $otherEmployee = Employee::query()->create([
             'department_id' => $this->employee->department_id,
             'employee_number' => 'DIST-EMP-NONOWNER', 'name' => 'Karyawan lain', 'is_active' => true,
@@ -275,7 +326,7 @@ final class DistributionApiTest extends TestCase
 
     public function test_viewer_can_read_but_cannot_approve_or_send(): void
     {
-        $distribution = $this->requested();
+        $distribution = $this->legacyRequested();
         $this->as($this->userWith(['distribution.view']));
         $this->getJson('/api/v1/distributions/'.$distribution->id)->assertOk();
         $this->postJson($this->url($distribution, 'approve'))->assertForbidden();
@@ -284,7 +335,7 @@ final class DistributionApiTest extends TestCase
 
     public function test_approve_requires_requested_status_and_does_not_touch_stock(): void
     {
-        $distribution = $this->requested();
+        $distribution = $this->legacyRequested();
         $this->as($this->manager);
         $this->postJson($this->url($distribution, 'approve'))
             ->assertOk()->assertJsonPath('data.status', 'approved');
@@ -304,7 +355,7 @@ final class DistributionApiTest extends TestCase
 
     public function test_rejection_requires_reason_and_marks_cancelled_without_stock(): void
     {
-        $distribution = $this->requested();
+        $distribution = $this->legacyRequested();
         $this->as($this->manager);
         $this->postJson($this->url($distribution, 'reject'), [])->assertUnprocessable();
         $this->postJson($this->url($distribution, 'reject'), ['reason' => 'Tidak sesuai kebutuhan'])
@@ -314,31 +365,25 @@ final class DistributionApiTest extends TestCase
         $this->assertSame(0, $this->outCount());
     }
 
-    public function test_prepare_only_after_approval_without_stock_change(): void
+    public function test_legacy_request_can_be_prepared_without_approval_or_stock_change(): void
     {
-        $distribution = $this->requested();
-        $this->as($this->staff);
-        $this->postJson($this->url($distribution, 'prepare'))->assertStatus(409);
-        $this->as($this->manager);
-        $this->postJson($this->url($distribution, 'approve'))->assertOk();
+        $distribution = $this->legacyRequested();
         $this->as($this->staff);
         $this->postJson($this->url($distribution, 'prepare'))
             ->assertOk()->assertJsonPath('data.status', 'preparing');
+        $this->assertNull($distribution->fresh()->approved_by);
         $this->assertSame('0.000', (string) $this->item->fresh()->stock_quantity);
     }
 
     public function test_send_only_from_preparing_and_decrements_stock_with_audit(): void
     {
         $this->stock();
-        $distribution = $this->requested();
+        $distribution = $this->legacyRequested();
         $this->as($this->staff);
         $this->postJson($this->url($distribution, 'send'))->assertStatus(409);
-        $this->as($this->manager);
-        $this->postJson($this->url($distribution, 'approve'))->assertOk();
-        $this->as($this->staff);
         $this->postJson($this->url($distribution, 'prepare'))->assertOk();
         $this->postJson($this->url($distribution, 'send'))
-            ->assertOk()->assertJsonPath('data.status', 'sent');
+            ->assertOk()->assertJsonPath('data.status', 'completed');
         $this->getJson('/api/v1/distributions/'.$distribution->id)->assertOk()
             ->assertJsonPath('data.employee.name', $this->employee->name)
             ->assertJsonPath('data.employee.department_name', 'Department Distribusi')
@@ -362,7 +407,22 @@ final class DistributionApiTest extends TestCase
         $this->assertSame('7.000', (string) $this->item->fresh()->stock_quantity);
         $this->assertSame(1, $this->outCount());
         $this->assertSame(1, DB::table('distribution_events')
-            ->where('distribution_id', $distribution->id)->where('action', 'sent')->count());
+            ->where('distribution_id', $distribution->id)->where('action', 'completed')->count());
+    }
+
+    public function test_legacy_sent_document_can_be_completed_by_operator_without_another_stock_issue(): void
+    {
+        $this->stock();
+        $distribution = $this->preparing();
+        $this->as($this->staff);
+        $this->postJson($this->url($distribution, 'send'))->assertOk();
+        $distribution->update(['status' => 'sent']);
+
+        $this->postJson($this->url($distribution, 'send'))->assertOk()
+            ->assertJsonPath('data.status', 'completed')
+            ->assertJsonPath('data.received_by', null);
+        $this->assertSame('7.000', (string) $this->item->fresh()->stock_quantity);
+        $this->assertSame(1, $this->outCount());
     }
 
     public function test_insufficient_stock_rolls_back_status_and_audit(): void
@@ -387,10 +447,6 @@ final class DistributionApiTest extends TestCase
         $data['items'][] = ['item_id' => $this->otherItem->id, 'quantity' => '3.000'];
         $id = $this->postJson('/api/v1/distributions', $data)->assertCreated()->json('data.id');
         $distribution = Distribution::query()->findOrFail($id);
-        $this->as($this->manager);
-        $this->postJson($this->url($distribution, 'approve'))->assertOk();
-        $this->as($this->staff);
-        $this->postJson($this->url($distribution, 'prepare'))->assertOk();
         $this->postJson($this->url($distribution, 'send'))->assertStatus(409);
         $this->assertSame('preparing', $distribution->fresh()->status);
         $this->assertSame('10.000', (string) $this->item->fresh()->stock_quantity);
@@ -398,7 +454,7 @@ final class DistributionApiTest extends TestCase
         $this->assertSame(0, $this->outCount());
     }
 
-    public function test_receive_only_by_actual_employee_after_sent(): void
+    public function test_legacy_sent_distribution_can_still_be_confirmed_by_actual_employee(): void
     {
         $this->stock();
         $distribution = $this->preparing();
@@ -406,6 +462,7 @@ final class DistributionApiTest extends TestCase
         $this->postJson($this->url($distribution, 'receive'))->assertStatus(409);
         $this->as($this->staff);
         $this->postJson($this->url($distribution, 'send'))->assertOk();
+        $distribution->update(['status' => 'sent']);
         $this->postJson($this->url($distribution, 'receive'))->assertForbidden();
         $this->as($this->employeeUser, ['employee:self']);
         $this->postJson($this->url($distribution, 'receive'))
@@ -429,12 +486,13 @@ final class DistributionApiTest extends TestCase
         $this->postJson($this->url($distribution, 'receive'))->assertForbidden();
     }
 
-    public function test_receive_replay_does_not_change_stock_twice(): void
+    public function test_legacy_receive_replay_does_not_change_stock_twice(): void
     {
         $this->stock();
         $distribution = $this->preparing();
         $this->as($this->staff);
         $this->postJson($this->url($distribution, 'send'))->assertOk();
+        $distribution->update(['status' => 'sent']);
         $this->as($this->employeeUser, ['employee:self']);
         $this->postJson($this->url($distribution, 'receive'))->assertOk();
         $this->postJson($this->url($distribution, 'receive'))->assertOk();
@@ -469,7 +527,7 @@ final class DistributionApiTest extends TestCase
 
     public function test_list_filters_by_status_and_employee(): void
     {
-        $distribution = $this->requested();
+        $distribution = $this->legacyRequested();
         $this->as($this->staff);
         $this->getJson('/api/v1/distributions?status=requested&employee_id='.$this->employee->id.'&per_page=5')
             ->assertOk()->assertJsonPath('meta.pagination.total', 1)
@@ -482,7 +540,7 @@ final class DistributionApiTest extends TestCase
 
     public function test_workflow_action_checks_permission_even_when_called_directly(): void
     {
-        $distribution = $this->requested();
+        $distribution = $this->legacyRequested();
         $outsider = $this->userWith(['distribution.view']);
         $this->expectException(AuthorizationException::class);
         app(DistributionWorkflow::class)->approve($distribution, $outsider);
@@ -494,10 +552,8 @@ final class DistributionApiTest extends TestCase
         $distribution = $this->preparing();
         $this->as($this->staff);
         $this->postJson($this->url($distribution, 'send'))->assertOk();
-        $this->as($this->employeeUser, ['employee:self']);
-        $this->postJson($this->url($distribution, 'receive'))->assertOk();
         $this->assertSame(
-            ['requested', 'approved', 'preparing', 'sent', 'received'],
+            ['preparing', 'completed'],
             DB::table('distribution_events')->where('distribution_id', $distribution->id)
                 ->orderBy('id')->pluck('action')->all()
         );

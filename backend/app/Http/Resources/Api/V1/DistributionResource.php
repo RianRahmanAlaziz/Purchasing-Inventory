@@ -15,6 +15,8 @@ final class DistributionResource extends JsonResource
             'id' => $this->id,
             'distribution_number' => $this->distribution_number,
             'employee_id' => $this->employee_id,
+            'recipient_name' => $this->recipient_name_snapshot
+                ?? ($this->relationLoaded('employee') ? $this->employee?->name : null),
             'employee' => $this->whenLoaded('employee', fn (): ?array => $this->employee === null
                 ? null : [
                     'id' => $this->employee->id,

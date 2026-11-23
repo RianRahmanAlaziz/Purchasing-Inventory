@@ -44,6 +44,20 @@ final class RoleAccessTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_staff_hr_can_confirm_receipts_and_process_distributions_without_hr_role(): void
+    {
+        $user = User::factory()->create(['is_active' => true])->assignRole('staff_hr');
+        Sanctum::actingAs($user, ['*']);
+
+        $this->assertFalse($user->hasRole('hr'));
+        $this->assertTrue($user->can('grn.confirm'));
+        $this->assertTrue($user->can('distribution.create'));
+        $this->assertTrue($user->can('distribution.send'));
+        $this->assertFalse($user->can('distribution.approve'));
+        $this->postJson('/api/v1/goods-receipts/999999999/confirm')->assertNotFound();
+        $this->postJson('/api/v1/distributions', [])->assertUnprocessable();
+    }
+
     public function test_super_admin_can_read_roles(): void
     {
         $user = User::factory()->create([

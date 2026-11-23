@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 final class Distribution extends Model
 {
     protected $fillable = [
-        'distribution_number', 'employee_id', 'requested_by', 'approved_by',
+        'distribution_number', 'employee_id', 'recipient_name_snapshot', 'requested_by', 'approved_by',
         'sent_by', 'received_by', 'status', 'purpose', 'requested_at',
         'approved_at', 'sent_at', 'received_at', 'cancelled_at', 'rejection_reason',
     ];

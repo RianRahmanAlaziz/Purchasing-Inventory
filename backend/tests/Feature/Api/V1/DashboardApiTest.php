@@ -219,7 +219,7 @@ final class DashboardApiTest extends TestCase
                 'employee_id' => $employeeId,
                 'requested_by' => $actor->id,
                 'purpose' => 'Perlengkapan kerja',
-                'status' => 'sent',
+                'status' => 'completed',
                 'requested_at' => $now,
                 'sent_at' => $now,
                 'created_at' => $now,
@@ -342,7 +342,7 @@ final class DashboardApiTest extends TestCase
             ->assertJsonPath('data.sections.goods_receipts.confirmed_count', 1)
             ->assertJsonPath('data.sections.distributions.total', 2)
             ->assertJsonPath('data.sections.distributions.by_status.requested', 1)
-            ->assertJsonPath('data.sections.distributions.by_status.sent', 1);
+            ->assertJsonPath('data.sections.distributions.by_status.completed', 1);
     }
 
     public function test_date_range_filters_documents_without_changing_stock_snapshot(): void

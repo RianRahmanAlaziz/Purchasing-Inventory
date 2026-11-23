@@ -64,7 +64,7 @@ final class ItemController extends Controller
             }
         }
 
-        $page = $query->orderBy('items.name')->orderBy('items.id')
+        $page = $query->orderByDesc('items.created_at')->orderByDesc('items.id')
             ->paginate((int) ($filters['per_page'] ?? 15));
 
         return ApiResponse::success(

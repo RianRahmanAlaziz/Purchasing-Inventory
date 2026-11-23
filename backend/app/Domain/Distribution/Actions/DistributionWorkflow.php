@@ -68,10 +68,13 @@ final class DistributionWorkflow
 
         return DB::transaction(function () use ($distribution, $actor): Distribution {
             $locked = $this->lock($distribution);
-            $this->requireStatus($locked, Status::Approved);
+            if (! in_array($locked->status, [Status::Requested->value, Status::Approved->value], true)) {
+                throw new DistributionConflict('Distribusi sudah diproses atau dibatalkan.');
+            }
             $this->ensureActiveRecipient($locked);
+            $from = $locked->status;
             $locked->update(['status' => Status::Preparing->value]);
-            $this->event($locked, $actor, 'preparing', Status::Approved->value);
+            $this->event($locked, $actor, 'preparing', $from);
 
             return $this->loaded($locked);
         }, attempts: 3);
@@ -96,9 +99,13 @@ final class DistributionWorkflow
 
             // Request yang berhasil dikirim sebelumnya adalah replay, bukan
             // pengiriman kedua. Jika audit tidak lengkap, tolak sebagai konflik.
-            if (in_array($locked->status, [Status::Sent->value, Status::ReceivedByEmployee->value], true)) {
+            if (in_array($locked->status, [Status::Sent->value, Status::Completed->value, Status::ReceivedByEmployee->value], true)) {
                 if ($locked->sent_at === null || $movementCount !== $lines->count()) {
                     throw new DistributionConflict('Status pengiriman dan audit stok tidak konsisten.');
+                }
+                if ($locked->status === Status::Sent->value) {
+                    $locked->update(['status' => Status::Completed->value]);
+                    $this->event($locked, $actor, 'completed', Status::Sent->value);
                 }
 
                 return $this->loaded($locked);
@@ -126,7 +133,8 @@ final class DistributionWorkflow
                 $this->stock->issueSentDistributionItem((int) $line->id, (int) $actor->id);
             }
 
-            $this->event($locked, $actor, 'sent', Status::Preparing->value);
+            $locked->update(['status' => Status::Completed->value]);
+            $this->event($locked, $actor, 'completed', Status::Preparing->value);
 
             return $this->loaded($locked);
         }, attempts: 3);
@@ -190,6 +198,9 @@ final class DistributionWorkflow
 
     private function ensureActiveRecipient(Distribution $distribution): void
     {
+        if ($distribution->employee_id === null && trim((string) $distribution->recipient_name_snapshot) !== '') {
+            return;
+        }
         if (! Employee::query()->whereKey($distribution->employee_id)
             ->where('is_active', true)->exists()) {
             throw new DistributionConflict('Karyawan penerima tidak aktif.');

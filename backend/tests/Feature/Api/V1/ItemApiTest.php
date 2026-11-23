@@ -81,6 +81,20 @@ final class ItemApiTest extends TestCase
         $this->getJson('/api/v1/items')->assertUnauthorized();
     }
 
+    public function test_inventory_lists_newest_created_items_first_across_pages(): void
+    {
+        $this->actingWith(['items.view']);
+        $category = $this->category();
+        $old = $this->item($category, 'SORT-OLD', ['name' => 'AAA Lama', 'created_at' => now()->subDays(2)]);
+        $new = $this->item($category, 'SORT-NEW', ['name' => 'ZZZ Baru', 'created_at' => now()->subDay()]);
+        $newer = $this->item($category, 'SORT-NEWER', ['name' => 'BBB Terbaru', 'created_at' => $new->created_at]);
+
+        $this->getJson('/api/v1/items?per_page=2')->assertOk()
+            ->assertJsonPath('data.0.id', $newer->id)->assertJsonPath('data.1.id', $new->id);
+        $this->getJson('/api/v1/items?per_page=2&page=2')->assertOk()
+            ->assertJsonPath('data.0.id', $old->id);
+    }
+
     public function test_role_without_item_permission_is_forbidden(): void
     {
         $this->actingWith([]);

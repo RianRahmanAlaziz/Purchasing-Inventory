@@ -194,7 +194,7 @@ final class SaveDraftPurchaseOrder
 
         $approvalBasis = PoMoney::add($subtotalCents, $addition);
         $grandTotal = PoMoney::subtract($approvalBasis, $withholding);
-        $threshold = PoMoney::cents((string) config('purchasing.gm_approval_threshold', '10000000.00'));
+        $threshold = PoMoney::cents((string) config('purchasing.gm_approval_threshold', '20000000.00'));
         $po->fill([
             'subtotal' => $subtotal,
             'discount_total' => PoMoney::format($discountTotal),

@@ -95,9 +95,9 @@ final class BusinessLifecycleIntegrationTest extends TestCase
             'po.view', 'po.create', 'po.submit', 'po.send', 'po.supplier-confirm',
         ]);
         $this->hr = $this->actor(['po.approve.hr', 'grn.confirm'], 'hr');
-        $this->gm = $this->actor(['po.approve.gm', 'distribution.approve', 'distribution.reject'], 'general_manager');
+        $this->gm = $this->actor(['po.approve.gm'], 'general_manager');
         $this->warehouse = $this->actor([
-            'grn.view', 'grn.create', 'distribution.view', 'distribution.create',
+            'grn.view', 'grn.create', 'grn.confirm', 'distribution.view', 'distribution.create',
             'distribution.prepare', 'distribution.send', 'inventory.adjust', 'inventory.view',
         ]);
     }
@@ -190,7 +190,7 @@ final class BusinessLifecycleIntegrationTest extends TestCase
 
     private function confirmGrn(int $grnId): void
     {
-        $this->signIn($this->hr);
+        $this->signIn($this->warehouse);
         $this->postJson("/api/v1/goods-receipts/{$grnId}/confirm")->assertOk();
     }
 
@@ -199,21 +199,13 @@ final class BusinessLifecycleIntegrationTest extends TestCase
         $this->signIn($this->warehouse);
 
         return (int) $this->postJson('/api/v1/distributions', [
-            'employee_id' => $this->employee->id,
+            'recipient_name' => 'Penerima operasional tanpa akun',
             'purpose' => 'Pemakaian perlengkapan kerja hasil pengadaan',
             'items' => [[
                 'item_id' => $this->item->id,
                 'quantity' => $quantity,
             ]],
-        ])->assertCreated()->assertJsonPath('data.status', 'requested')->json('data.id');
-    }
-
-    private function prepareDistribution(int $id): void
-    {
-        $this->signIn($this->gm);
-        $this->postJson("/api/v1/distributions/{$id}/approve")->assertOk();
-        $this->signIn($this->warehouse);
-        $this->postJson("/api/v1/distributions/{$id}/prepare")->assertOk();
+        ])->assertCreated()->assertJsonPath('data.status', 'preparing')->json('data.id');
     }
 
     private function stock(): string
@@ -281,7 +273,7 @@ final class BusinessLifecycleIntegrationTest extends TestCase
         $this->getJson("/api/v1/items/{$itemId}")->assertOk()->assertJsonPath('data.stock_quantity', '0.000');
     }
 
-    public function test_full_journey_po_partial_damaged_grn_order_and_employee_distribution(): void
+    public function test_full_journey_po_partial_damaged_grn_order_and_operator_distribution(): void
     {
         $poId = $this->createPo();
         $this->assertSame('0.000', $this->stock());
@@ -311,28 +303,26 @@ final class BusinessLifecycleIntegrationTest extends TestCase
         $this->assertSame('completed', DB::table('orders')->where('purchase_order_id', $poId)->value('status'));
 
         $distributionId = $this->distribute();
-        $this->prepareDistribution($distributionId);
         $this->assertSame('10.000', $this->stock());
         $this->signIn($this->warehouse);
         $this->postJson("/api/v1/distributions/{$distributionId}/send")
-            ->assertOk()->assertJsonPath('data.status', 'sent');
+            ->assertOk()->assertJsonPath('data.status', 'completed');
         $this->assertSame('7.000', $this->stock());
         $this->assertSame(1, $this->movements('distribution_out'));
 
-        $this->signIn($this->employeeUser, ['employee:self']);
-        $this->postJson("/api/v1/distributions/{$distributionId}/receive")
-            ->assertOk()->assertJsonPath('data.status', 'received_by_employee');
+        $this->assertNull(DB::table('distributions')->where('id', $distributionId)->value('approved_by'));
+        $this->assertNull(DB::table('distributions')->where('id', $distributionId)->value('received_by'));
         $this->assertSame('7.000', $this->stock());
         $this->assertSame(1, $this->movements('distribution_out'));
         $this->assertSame(1, DB::table('purchase_order_events')
             ->where('purchase_order_id', $poId)->where('action', 'fully_approved')->count());
         $this->assertSame(1, DB::table('distribution_events')
-            ->where('distribution_id', $distributionId)->where('action', 'received')->count());
+            ->where('distribution_id', $distributionId)->where('action', 'completed')->count());
     }
 
     public function test_above_threshold_requires_hr_then_gm_and_only_one_order(): void
     {
-        $poId = $this->createPo('10000000.01', '1.000');
+        $poId = $this->createPo('20000000.01', '1.000');
         $this->signIn($this->maker);
         $this->postJson("/api/v1/purchase-orders/{$poId}/submit")->assertOk();
         $this->signIn($this->gm);
@@ -392,7 +382,6 @@ final class BusinessLifecycleIntegrationTest extends TestCase
     public function test_insufficient_stock_rejects_sent_and_rolls_back(): void
     {
         $distributionId = $this->distribute('3.000');
-        $this->prepareDistribution($distributionId);
         $this->signIn($this->warehouse);
         $this->postJson("/api/v1/distributions/{$distributionId}/send")->assertStatus(409);
         $this->assertSame('preparing', DB::table('distributions')->where('id', $distributionId)->value('status'));
@@ -420,7 +409,7 @@ final class BusinessLifecycleIntegrationTest extends TestCase
         $this->assertSame(1, $this->movements('adjustment'));
     }
 
-    public function test_sent_and_receive_replay_do_not_change_stock_twice(): void
+    public function test_completed_distribution_replay_does_not_change_stock_twice(): void
     {
         $this->signIn($this->warehouse);
         $this->withHeader('Idempotency-Key', (string) Str::uuid())
@@ -431,15 +420,11 @@ final class BusinessLifecycleIntegrationTest extends TestCase
             ])->assertCreated();
 
         $distributionId = $this->distribute('3.000');
-        $this->prepareDistribution($distributionId);
         $this->signIn($this->warehouse);
         $url = "/api/v1/distributions/{$distributionId}/send";
         $this->postJson($url)->assertOk();
         $this->postJson($url)->assertOk();
-        $this->signIn($this->employeeUser, ['employee:self']);
-        $receiptUrl = "/api/v1/distributions/{$distributionId}/receive";
-        $this->postJson($receiptUrl)->assertOk();
-        $this->postJson($receiptUrl)->assertOk();
+        $this->assertSame('completed', DB::table('distributions')->where('id', $distributionId)->value('status'));
         $this->assertSame('2.000', $this->stock());
         $this->assertSame(1, $this->movements('distribution_out'));
     }

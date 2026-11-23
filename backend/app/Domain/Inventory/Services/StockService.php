@@ -190,7 +190,7 @@ final class StockService
 
     /**
      * HANYA dipanggil oleh transaksi pengiriman distribusi (Fase Distribusi).
-     * Status sent, sent_at, dan sent_by harus diset pada transaksi yang sama.
+     * Status sent/completed, sent_at, dan sent_by harus diset pada transaksi yang sama.
      */
     public function issueSentDistributionItem(int $distributionItemId, int $actorId): StockMovement
     {
@@ -204,7 +204,7 @@ final class StockService
             $distribution = DB::table('distributions')
                 ->where('id', $source->distribution_id)->lockForUpdate()->first();
 
-            if ($distribution === null || $distribution->status !== 'sent'
+            if ($distribution === null || ! in_array($distribution->status, ['sent', 'completed'], true)
                 || $distribution->sent_at === null || (int) $distribution->sent_by !== $actorId) {
                 throw new StockConflictException('Distribusi belum dikirim oleh aktor ini.');
             }

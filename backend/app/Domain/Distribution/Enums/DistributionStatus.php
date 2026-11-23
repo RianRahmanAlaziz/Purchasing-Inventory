@@ -10,6 +10,7 @@ enum DistributionStatus: string
     case Approved = 'approved';
     case Preparing = 'preparing';
     case Sent = 'sent';
+    case Completed = 'completed';
     case ReceivedByEmployee = 'received_by_employee';
     case Cancelled = 'cancelled';
 }

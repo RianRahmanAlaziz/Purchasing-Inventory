@@ -194,8 +194,8 @@ final class OrderApiTest extends TestCase
     {
         $gm = $this->roleUser(['orders.view', 'po.approve.gm', 'reports.view'])
             ->assignRole(Role::findOrCreate('general_manager', 'web'));
-        $gmOrder = $this->approvedOrder(unitPrice: '1000000.01', gm: $gm);
-        $hrOrder = $this->approvedOrder(unitPrice: '1000000.00');
+        $gmOrder = $this->approvedOrder(unitPrice: '2000000.01', gm: $gm);
+        $hrOrder = $this->approvedOrder(unitPrice: '2000000.00');
 
         $this->signIn($gm);
         $this->getJson('/api/v1/orders?per_page=1')->assertOk()
