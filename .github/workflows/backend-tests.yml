@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   backend-tests:
-    name: Laravel 13 / PHP 8.3 / MySQL 8
+    name: Laravel 13 / PHP 8.4 / MySQL 8
     runs-on: ubuntu-latest
 
     defaults:
@@ -69,7 +69,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: "8.3"
+          php-version: "8.4"
           extensions: mbstring, intl, pdo_mysql, pdo_sqlite, sqlite3, bcmath, gd, zip
           coverage: none
           tools: composer:v2
