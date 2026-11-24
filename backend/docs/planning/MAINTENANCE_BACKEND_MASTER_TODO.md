@@ -1,7 +1,7 @@
 # MASTER TODO — Backend ERP Maintenance & General Affairs
 
 > **Dokumen patokan utama (living document)** untuk modul Maintenance & GA, Laravel 13 + MySQL.  
-> **Versi:** 1.1 | **Dibuat:** 23 November 2026 | **Diperbarui:** 24 November 2026 | **Status:** AKTIF — fase R0  
+> **Versi:** 1.2 | **Dibuat:** 23 November 2026 | **Diperbarui:** 24 November 2026 | **Status:** AKTIF — fase R0  
 > **Lokasi yang disarankan di repo:** `backend/docs/planning/MAINTENANCE_BACKEND_MASTER_TODO.md`  
 > **Sumber kebutuhan:** `RPD_Maintenance_GA_v1.0.md` (draft 23 Nov 2026) dan foto tabel jobdesk GA (23 Nov 2026).  
 > **Baseline awal yang dilaporkan pengguna:** 338 tests, 2.669 assertions. **Baseline terbaru terverifikasi GitHub Actions:** 346 tests, 2.722 assertions pada commit `9583abd` (24 November 2026). Belum ada tests khusus domain Maintenance.  
@@ -66,13 +66,13 @@ Semua `PENDING` sampai ada jawaban dari pemilik proses GA. Kelompok di bawah buk
 - [x] **MGA-R0-001** `[P0]` Kumpulkan sumber kebutuhan: foto jobdesk GA dan RPD Maintenance GA v1.0 (draft). **Bukti:** dokumen dan foto tersedia.
 - [x] **MGA-R0-002** `[P0]` Catat baseline tes Purchasing & Inventory. **Bukti:** laporan pengguna `338 passed (2669 assertions)`.
 - [x] **MGA-R0-003** `[P0]` Audit source code terakhir sebelum implementasi: User/RBAC, Company, Item, StockService, StockMovement, routes, migration & tests. **Bukti:** `MAINTENANCE_R0_003_BASELINE_AUDIT.md`, commit acuan `9583abd`, GitHub Actions run `45316651290` sukses: 346 tests / 2.722 assertions. Audit statis + baseline existing; belum ada implementasi Maintenance.
-- [ ] **MGA-R0-004** `[P0]` Review cakupan 23 kebutuhan sumber (`VEH-01..11`, `AST-01..06`, `FAC-01..03`, `ATK-01..03`) dengan GA. **DoD:** tidak ada kegiatan screenshot yang hilang dari backlog.
-- [ ] **MGA-R0-005** `[P0]` Finalisasi D-01, D-10, D-11: kelompok aset, PIC/approval, data per PT. **DoD:** keputusan bertanggal dan disetujui.
+- [ ] **MGA-R0-004** `[P0]` Review cakupan 23 kebutuhan sumber (`VEH-01..11`, `AST-01..06`, `FAC-01..03`, `ATK-01..03`) dengan GA. **IN PROGRESS — persiapan 23/23 baris siap, belum divalidasi GA.** **Artefak:** `MAINTENANCE_R0_004_GA_VALIDATION_MATRIX.md`. **DoD:** GA meninjau semua baris, bukti dan hasilnya dicatat.
+- [ ] **MGA-R0-005** `[P0]` Finalisasi D-01, D-10, D-11: kelompok aset, PIC/approval, data per PT. **BLOCKED — seluruhnya PENDING, belum sign-off GA.** **Artefak:** `MAINTENANCE_R0_005_DECISION_REGISTER.md`. **DoD:** keputusan bertanggal, nama penyetuju dan bukti disimpan.
 - [ ] **MGA-R0-006** `[P0]` Finalisasi D-02, D-03, D-04 dan D-13 sebelum jadwal servis/request. **DoD:** rumus due dan flow request ditulis dengan contoh kasus.
 - [ ] **MGA-R0-007** `[P0]` Finalisasi D-08, D-09, D-12 sebelum implementasi stok/ATK. **DoD:** titik pengeluaran, retur, jadwal ATK disahkan.
 - [ ] **MGA-R0-008** `[P1]` Kumpulkan SOP D-05, D-06 dan informasi sistem D-07; tandai blocked bila belum ada. **DoD:** kebutuhan R4/R5 bisa diprioritaskan tanpa mengarang SOP.
-- [ ] **MGA-R0-009** `[P0]` Definisikan scope MVP final serta acceptance criteria per FR; buat matriks akses per aksi. **DoD:** sign-off GA dan technical lead.
-- [ ] **MGA-R0-010** `[P0]` Buat ERD per irisan kecil (R1 dulu), bukan seluruh modul sekaligus. **DoD:** FK, indeks, unique constraints, soft-delete, dan retensi dokumen jelas.
+- [ ] **MGA-R0-009** `[P0]` Definisikan scope MVP final serta acceptance criteria per FR; buat matriks akses per aksi. **IN PROGRESS — proposal scope dan matriks API/permission disiapkan, belum final/sign-off.** **Artefak:** `MAINTENANCE_R0_009_MVP_RBAC_PROPOSAL.md`. **DoD:** keputusan D-01/D-10/D-11 + GA/technical lead sign-off dan tes disetujui.
+- [ ] **MGA-R0-010** `[P0]` Buat ERD per irisan kecil (R1 dulu), bukan seluruh modul sekaligus. **BLOCKED untuk ERD final oleh D-01 dan D-11**; sketsa alternatif tanpa migration masih boleh. **DoD:** FK, indeks, unique constraints, soft-delete, dan retensi dokumen jelas.
 
 ## 4. R1 — Master GA, aset dan kendaraan
 
@@ -217,12 +217,13 @@ Status             : PROPOSED | APPROVED | REJECTED | IMPLEMENTED
 |---|---|---|---|---|
 | 1.0 | 2026-11-23 | Baseline awal | Master TODO dari RPD v1.0 + gambar jobdesk GA, baseline 338 test | Belum mengubah code/database |
 | 1.1 | 2026-11-24 | MGA-R0-003 | Audit baseline source, identifikasi batas domain/risiko, dokumentasi tersimpan di repo; baseline CI diperbarui menjadi 346 tests / 2.722 assertions | Dokumen saja, tidak ada perubahan schema/API/RBAC/production; D-01..D-13 tetap pending |
+| 1.2 | 2026-11-24 | MGA-R0-004 / MGA-R0-005 / MGA-R0-009 | Matriks validasi 23 kebutuhan, register keputusan 13 isu, dan proposal MVP/RBAC dibuat | Dokumentasi saja; tidak ada implementasi; D-01..D-13 seluruhnya PENDING, tidak ada sign-off GA atau perubahan role/skema/API/stock |
 
 ### Decision Log
 
 | Tanggal | ID | Keputusan final | Disetujui oleh | Task terdampak |
 |---|---|---|---|---|
-| — | — | Belum ada keputusan bisnis final | — | — |
+| — | — | Belum ada keputusan bisnis final (termasuk D-01/D-10/D-11) | — | — |
 
 ## 12. Definition of Done untuk SETIAP fitur backend
 
@@ -237,4 +238,4 @@ Status             : PROPOSED | APPROVED | REJECTED | IMPLEMENTED
 
 ## 13. NEXT TASK yang disarankan
 
-**Lanjut `MGA-R0-004` dan `MGA-R0-005`**: validasi 23 kebutuhan dan keputusan D-01/D-10/D-11 bersama GA sebelum migration master aset. Audit `MGA-R0-003` tersedia di `MAINTENANCE_R0_003_BASELINE_AUDIT.md`. Keputusan D-02/D-03/D-04, D-08/D-09, D-12 tidak boleh ditebak ketika mulai servis/ATK/stok. Selama belum disetujui, kita masih bisa menyiapkan proposal ERD, test skenario dan dokumentasi—tanpa migrasi production.
+**Lanjut `MGA-R0-004` dan `MGA-R0-005` bersama GA**: draft matriks 23/23 dan register D-01/D-10/D-11 sudah tersedia, tetapi belum disetujui. Proposal `MGA-R0-009` boleh direview; belum boleh mengeksekusi migrasi master aset. Audit `MGA-R0-003` tersedia di `MAINTENANCE_R0_003_BASELINE_AUDIT.md`. Keputusan D-02/D-03/D-04, D-08/D-09, D-12 tidak boleh ditebak ketika mulai servis/ATK/stok. Selama belum disetujui, kita masih bisa menyiapkan proposal ERD, test skenario dan dokumentasi—tanpa migrasi production.
