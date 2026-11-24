@@ -1,12 +1,12 @@
 # MGA-R0-005 — Register Keputusan GA (D-01 s.d. D-13)
 
 **Tanggal:** 24 November 2026 | **Status:** DRAFT UNTUK REVIEW | **Owner keputusan:** GA / product owner (belum ditetapkan).
-**Dokumen sumber:** RPD Maintenance GA v1.0; Master TODO v1.2. **TIDAK ADA keputusan D-01..D-13 yang disahkan.**
+**Dokumen sumber:** RPD Maintenance GA v1.0; Master TODO v1.3. **TIDAK ADA keputusan D-01..D-13 yang disahkan.**
 
 ## 1. Pemisahan keputusan
 
 - **Fakta dari RPD:** kegiatan dan frekuensi pada foto, PIC tertulis GA; RPD berstatus draft.
-- **Preferensi awal pengguna:** D-01, D-10, D-11 = **belum diputuskan bersama GA**. Ini bukan persetujuan terhadap salah satu opsi.
+- **Preferensi awal pengguna:** pengguna kini telah memilih sejumlah opsi rancangan sementara untuk D-01/D-10/D-11 dan registrasi aset; **belum disahkan GA**. Rincian lengkap ada di `MAINTENANCE_R0_R1_REKAP_DISKUSI_KEPUTUSAN_SEMENTARA_2026-11-24.md`.
 - **Usulan teknis:** opsi arsitektur/workflow untuk dibahas; dapat berubah.
 - **Keputusan resmi:** hanya dicatat bila ada pilihan final, tanggal, nama/jabatan penyetuju, bukti rapat/SOP dan task terdampak. Saat ini **tidak ada**.
 
@@ -66,3 +66,19 @@
 - **MGA-R1-003** (master aset migration), **MGA-R1-002** (permission matrix final), dan **MGA-R0-010** (ERD final) belum boleh diperlakukan siap implementasi.
 - D-02/D-03/D-04/D-08/D-09/D-12/D-13 dan SOP R4/R5 tetap PENDING, bukan otomatis disetujui oleh keputusan R0-005.
 - Tidak ada izin, role, tabel, endpoint, scheduler, atau mutasi stok baru yang dijalankan oleh dokumen ini.
+
+
+## 6. Addendum preferensi desain pengguna — 24 November 2026 (BUKAN keputusan formal)
+
+| ID / topik | Preferensi pengguna | Status persetujuan GA |
+|---|---|---|
+| D-01 | Kendaraan, alat berat, kantor, gedung/fasilitas; ATK tetap Inventory; bedakan gedung milik dengan sewa | **PENDING** |
+| D-10 | Semua role existing dapat memakai fitur Maintenance sesuai permission aksi; **khusus klasifikasi barang** hanya `super_admin` atau `hr` **dan** permission `maintenance.asset-items.classify` | **PENDING** |
+| D-11 | PT pembeli menjadi pemilik aset; pemakaian di PT lain tidak mengalihkan kepemilikan; akses lintas PT melalui permission | **PENDING** |
+| Registrasi dari GRN | Unit baik GRN confirmed eligible tanpa Order completed; petugas berizin melakukan registrasi manual; boleh batch 2 lalu 4; kode otomatis unik per unit, sequence per PT | **PENDING** |
+| Item trackability | Klasifikasi eligibility berasal dari Master Barang; kandidat kolom `items.is_asset_trackable` default false, perubahan terpisah dan diaudit | **PENDING** |
+| Aset historis | Input manual oleh HR berizin, dengan verifikasi PT pemilik dan bukti | **PENDING** |
+
+**Belum diputuskan:** role yang boleh melakukan registrasi aset dari GRN, prefix kode perusahaan dan reset counter, penanganan klasifikasi yang berubah sesudah registrasi. Semuanya tidak boleh diasumsikan sebagai keputusan GA.
+
+**Rujukan:** `MAINTENANCE_R0_R1_REKAP_DISKUSI_KEPUTUSAN_SEMENTARA_2026-11-24.md`, `MAINTENANCE_R0_010_ERD_R1_REVISI_DRAFT_v0.8.md`, `MAINTENANCE_R1_002_RBAC_MATRIX_DRAFT_v0.1.md`.

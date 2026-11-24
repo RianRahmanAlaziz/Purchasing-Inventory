@@ -1,7 +1,7 @@
 # MASTER TODO — Backend ERP Maintenance & General Affairs
 
 > **Dokumen patokan utama (living document)** untuk modul Maintenance & GA, Laravel 13 + MySQL.  
-> **Versi:** 1.2 | **Dibuat:** 23 November 2026 | **Diperbarui:** 24 November 2026 | **Status:** AKTIF — fase R0  
+> **Versi:** 1.3 | **Dibuat:** 23 November 2026 | **Diperbarui:** 24 November 2026 | **Status:** AKTIF — fase R0  
 > **Lokasi yang disarankan di repo:** `backend/docs/planning/MAINTENANCE_BACKEND_MASTER_TODO.md`  
 > **Sumber kebutuhan:** `RPD_Maintenance_GA_v1.0.md` (draft 23 Nov 2026) dan foto tabel jobdesk GA (23 Nov 2026).  
 > **Baseline awal yang dilaporkan pengguna:** 338 tests, 2.669 assertions. **Baseline terbaru terverifikasi GitHub Actions:** 346 tests, 2.722 assertions pada commit `9583abd` (24 November 2026). Belum ada tests khusus domain Maintenance.  
@@ -72,15 +72,15 @@ Semua `PENDING` sampai ada jawaban dari pemilik proses GA. Kelompok di bawah buk
 - [ ] **MGA-R0-007** `[P0]` Finalisasi D-08, D-09, D-12 sebelum implementasi stok/ATK. **DoD:** titik pengeluaran, retur, jadwal ATK disahkan.
 - [ ] **MGA-R0-008** `[P1]` Kumpulkan SOP D-05, D-06 dan informasi sistem D-07; tandai blocked bila belum ada. **DoD:** kebutuhan R4/R5 bisa diprioritaskan tanpa mengarang SOP.
 - [ ] **MGA-R0-009** `[P0]` Definisikan scope MVP final serta acceptance criteria per FR; buat matriks akses per aksi. **IN PROGRESS — proposal scope dan matriks API/permission disiapkan, belum final/sign-off.** **Artefak:** `MAINTENANCE_R0_009_MVP_RBAC_PROPOSAL.md`. **DoD:** keputusan D-01/D-10/D-11 + GA/technical lead sign-off dan tes disetujui.
-- [ ] **MGA-R0-010** `[P0]` Buat ERD per irisan kecil (R1 dulu), bukan seluruh modul sekaligus. **BLOCKED untuk ERD final oleh D-01 dan D-11**; sketsa alternatif tanpa migration masih boleh. **DoD:** FK, indeks, unique constraints, soft-delete, dan retensi dokumen jelas.
+- [ ] **MGA-R0-010** `[P0]` Buat ERD per irisan kecil (R1 dulu), bukan seluruh modul sekaligus. **IN PROGRESS (DRAFT v0.8) — ERD sementara dan skenario registrasi bertahap tersedia; finalisasi tetap BLOCKED D-01/D-11 dan sign-off GA.** **Artefak:** `MAINTENANCE_R0_010_ERD_R1_REVISI_DRAFT_v0.8.md`; `MAINTENANCE_R0_R1_REKAP_DISKUSI_KEPUTUSAN_SEMENTARA_2026-11-24.md`. **DoD:** FK, indeks, unique constraints, soft-delete, dan retensi dokumen jelas.
 
 ## 4. R1 — Master GA, aset dan kendaraan
 
-- [ ] **MGA-R1-001** `[P0]` Tentukan batas domain `app/Domain/Maintenance` dan pola Actions/Models/Services mengikuti existing. **Deps:** R0-003, R0-009. **DoD:** struktur kecil, tidak memindahkan domain lama.
-- [ ] **MGA-R1-002** `[P0]` Tentukan permission usulan per action dan metode pemberian akses menggunakan `ModulePermissionRegistrar`; **jangan otomatis memberikan role GA**. **Deps:** D-10. **DoD:** matrix API→permission→owner.
+- [ ] **MGA-R1-001** `[P0]` Tentukan batas domain `app/Domain/Maintenance` dan pola Actions/Models/Services mengikuti existing. **IN PROGRESS (proposal dokumentasi, bukan implementasi)**. **Artefak:** `MAINTENANCE_R1_001_DOMAIN_STRUCTURE_PROPOSAL_v0.1.md`. **Deps:** R0-003, R0-009. **DoD:** struktur kecil, tidak memindahkan domain lama.
+- [ ] **MGA-R1-002** `[P0]` Tentukan permission usulan per action dan metode pemberian akses menggunakan `ModulePermissionRegistrar`; **jangan otomatis memberikan role GA**. **IN PROGRESS (draft matriks); BLOCKED untuk persetujuan D-10**. **Artefak:** `MAINTENANCE_R1_002_RBAC_MATRIX_DRAFT_v0.1.md`; klasifikasi Item hanya `super_admin`/`hr` DAN permission khusus. **Deps:** D-10. **DoD:** matrix API→permission→owner.
 - [ ] **MGA-R1-003** `[P0]` ERD dan migration `maintenance_assets` terhubung ke `companies` sesuai D-11. **Deps:** D-01, D-11. **DoD:** constraint, uniqueness kode aset, dan rules integritas tercakup.
 - [ ] **MGA-R1-004** `[P1]` Asset Model + Form Requests + API Resource + Actions + CRUD master aset (FR-01). **Deps:** R1-003. **DoD:** validasi, filter, pagination, aktif/nonaktif, akses 401/403/422.
-- [ ] **MGA-R1-005** `[P1]` Asset numbering/registrasi setelah pembelian Purchasing (AST-01, AST-02). **Deps:** R1-004. **DoD:** tidak menduplikasi aset; referensi PO/GRN bersifat opsional jika disahkan.
+- [ ] **MGA-R1-005** `[P1]` Asset numbering/registrasi setelah pembelian Purchasing (AST-01, AST-02). **IN PROGRESS (kontrak API draft saja), implementasi BLOCKED oleh R1-004 dan keputusan GA.** **Artefak:** `MAINTENANCE_R1_ASSET_REGISTRATION_API_CONTRACT_DRAFT_v0.4.md`; GRN confirmed, registrasi manual bertahap dan idempotensi. **Deps:** R1-004. **DoD:** tidak menduplikasi aset; referensi PO/GRN bersifat opsional jika disahkan.
 - [ ] **MGA-R1-006** `[P1]` ERD dan migration profil kendaraan/alat berat (FR-02; VEH-01/05/06). **Deps:** D-03. **DoD:** mendukung pembacaan KM atau jam operasi bila relevan; bukan asumsi semua KM.
 - [ ] **MGA-R1-007** `[P1]` API master kendaraan/alber: metadata, identitas, status, relasi aset. **Deps:** R1-006. **DoD:** validasi dan ownership diuji.
 - [ ] **MGA-R1-008** `[P1]` ERD/migration histori odometer/hourmeter, input manual harian (FR-03; VEH-01). **Deps:** R1-006. **DoD:** nilai tidak menurun tanpa koreksi beralasan dan audit.
@@ -218,6 +218,7 @@ Status             : PROPOSED | APPROVED | REJECTED | IMPLEMENTED
 | 1.0 | 2026-11-23 | Baseline awal | Master TODO dari RPD v1.0 + gambar jobdesk GA, baseline 338 test | Belum mengubah code/database |
 | 1.1 | 2026-11-24 | MGA-R0-003 | Audit baseline source, identifikasi batas domain/risiko, dokumentasi tersimpan di repo; baseline CI diperbarui menjadi 346 tests / 2.722 assertions | Dokumen saja, tidak ada perubahan schema/API/RBAC/production; D-01..D-13 tetap pending |
 | 1.2 | 2026-11-24 | MGA-R0-004 / MGA-R0-005 / MGA-R0-009 | Matriks validasi 23 kebutuhan, register keputusan 13 isu, dan proposal MVP/RBAC dibuat | Dokumentasi saja; tidak ada implementasi; D-01..D-13 seluruhnya PENDING, tidak ada sign-off GA atau perubahan role/skema/API/stock |
+| 1.3 | 2026-11-24 | MGA-R0-005 / R0-010 / R1-001 / R1-002 / R1-005 | Arsip preferensi diskusi pengguna; ERD R1 v0.8, kontrak API v0.4, proposal struktur domain dan matriks RBAC tersedia | Hanya dokumen; D-01/D-10/D-11 dan D lain tetap PENDING secara formal; tanpa migration/route/role/stock dan tes Maintenance belum dijalankan |
 
 ### Decision Log
 
@@ -238,4 +239,4 @@ Status             : PROPOSED | APPROVED | REJECTED | IMPLEMENTED
 
 ## 13. NEXT TASK yang disarankan
 
-**Lanjut `MGA-R0-004` dan `MGA-R0-005` bersama GA**: draft matriks 23/23 dan register D-01/D-10/D-11 sudah tersedia, tetapi belum disetujui. Proposal `MGA-R0-009` boleh direview; belum boleh mengeksekusi migrasi master aset. Audit `MGA-R0-003` tersedia di `MAINTENANCE_R0_003_BASELINE_AUDIT.md`. Keputusan D-02/D-03/D-04, D-08/D-09, D-12 tidak boleh ditebak ketika mulai servis/ATK/stok. Selama belum disetujui, kita masih bisa menyiapkan proposal ERD, test skenario dan dokumentasi—tanpa migrasi production.
+**Lanjut `MGA-R0-004` dan `MGA-R0-005` bersama GA**: draft matriks 23/23 dan register D-01/D-10/D-11 sudah tersedia, dengan preferensi desain sementara pengguna tercatat di `MAINTENANCE_R0_R1_REKAP_DISKUSI_KEPUTUSAN_SEMENTARA_2026-11-24.md`, tetapi belum disetujui. Proposal `MGA-R0-009` boleh direview; belum boleh mengeksekusi migrasi master aset. Audit `MGA-R0-003` tersedia di `MAINTENANCE_R0_003_BASELINE_AUDIT.md`. Keputusan D-02/D-03/D-04, D-08/D-09, D-12 tidak boleh ditebak ketika mulai servis/ATK/stok. Selama belum disetujui, kita masih bisa menyiapkan proposal ERD, test skenario dan dokumentasi—tanpa migrasi production.
