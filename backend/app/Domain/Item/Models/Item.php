@@ -34,6 +34,8 @@ final class Item extends Model
             'is_active' => 'boolean',
             'is_low_stock' => 'boolean',
             'awaiting_first_receipt' => 'boolean',
+            'is_asset_trackable' => 'boolean',
+
         ];
     }
 

@@ -42,21 +42,33 @@ final class UpdateItemRequest extends FormRequest
 
         return [
             'category_id' => [
-                'sometimes', 'required', 'integer',
+                'sometimes',
+                'required',
+                'integer',
                 Rule::exists('categories', 'id')->where('is_active', true),
             ],
             'sku' => [
-                'sometimes', 'required', 'string', 'max:80',
+                'sometimes',
+                'required',
+                'string',
+                'max:80',
                 'regex:/^[A-Z0-9][A-Z0-9._-]*$/',
                 Rule::unique('items', 'sku')->ignore($id),
             ],
             'name' => ['sometimes', 'required', 'string', 'max:200'],
             'unit' => [
-                'sometimes', 'required', 'string', 'max:30',
+                'sometimes',
+                'required',
+                'string',
+                'max:30',
                 'regex:/^[a-z][a-z0-9.\/_-]*$/',
             ],
             'minimum_stock' => [
-                'sometimes', 'required', 'numeric', 'min:0', 'decimal:0,3',
+                'sometimes',
+                'required',
+                'numeric',
+                'min:0',
+                'decimal:0,3',
                 'regex:/^\d{1,15}(?:\.\d{1,3})?$/',
             ],
             'maximum_stock' => ['sometimes', 'nullable', 'regex:/^\d{1,15}(?:\.\d{1,3})?$/D'],
@@ -64,6 +76,7 @@ final class UpdateItemRequest extends FormRequest
             'is_active' => ['sometimes', 'required', 'boolean'],
             'stock_quantity' => ['prohibited'],
             'last_purchase_price' => ['prohibited'],
+            'is_asset_trackable' => ['prohibited'],
         ];
     }
 }

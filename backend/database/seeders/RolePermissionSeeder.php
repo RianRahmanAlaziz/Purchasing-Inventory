@@ -68,6 +68,14 @@ final class RolePermissionSeeder extends Seeder
             'distribution.approve',
             'distribution.reject',
             'reports.view',
+            'maintenance.assets.view',
+            'maintenance.assets.view-all-companies',
+            'maintenance.assets.manage',
+            'maintenance.assets.manage-all-companies',
+            'maintenance.vehicles.view',
+            'maintenance.vehicles.view-all-companies',
+            'maintenance.vehicles.manage',
+            'maintenance.vehicles.manage-all-companies',
         ];
 
         $roles = [
@@ -166,7 +174,7 @@ final class RolePermissionSeeder extends Seeder
             foreach ($roles as $name => $rolePermissions) {
                 $role = Role::findOrCreate($name, 'web');
                 $role->syncPermissions(array_map(
-                    static fn (string $permission): Permission => $permissionsByName[$permission],
+                    static fn(string $permission): Permission => $permissionsByName[$permission],
                     $rolePermissions,
                 ));
             }

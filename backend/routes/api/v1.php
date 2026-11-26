@@ -16,6 +16,10 @@ use App\Http\Controllers\Api\V1\GoodsReceiptController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\InvoiceController;
 use App\Http\Controllers\Api\V1\ItemController;
+use App\Http\Controllers\Api\V1\MaintenanceAssetController;
+use App\Http\Controllers\Api\V1\MaintenanceAssetRegistrationController;
+use App\Http\Controllers\Api\V1\MaintenanceItemClassificationController;
+use App\Http\Controllers\Api\V1\MaintenanceVehicleProfileController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\PaymentController;
@@ -53,6 +57,78 @@ Route::prefix('auth')->group(function (): void {
 Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function (): void {
     Route::get('/erp/apps', ApplicationController::class)->name('erp.apps.index');
     $masterAccess = RoleMiddleware::using('super_admin');
+
+    // =========================================================
+    // MAINTENANCE MODULE
+    // =========================================================
+
+    Route::prefix('maintenance')->name('maintenance.')->group(function (): void {
+
+        // ---------------------------------------------
+        // KLASIFIKASI CALON ASET
+        // ---------------------------------------------
+
+        Route::patch('/item-classifications/{item}',   MaintenanceItemClassificationController::class)
+            ->whereNumber('item')
+            ->middleware('can:maintenance.asset-items.classify')
+            ->name('item-classifications.update');
+
+        // ---------------------------------------------
+        // MASTER ASET
+        // ---------------------------------------------
+
+        Route::get('/assets', [MaintenanceAssetController::class, 'index'])
+            ->middleware('can:maintenance.assets.view')
+            ->name('assets.index');
+
+        Route::get('/assets/{asset}', [MaintenanceAssetController::class, 'show'])
+            ->whereNumber('asset')
+            ->middleware('can:maintenance.assets.view')
+            ->name('assets.show');
+
+        Route::patch('/assets/{asset}',   [MaintenanceAssetController::class, 'update'])
+            ->whereNumber('asset')
+            ->middleware('can:maintenance.assets.manage')
+            ->name('assets.update');
+
+        // =========================================================
+        // MAINTENANCE — Kandidat & Registrasi Aset dari GRN
+        // =========================================================
+
+        Route::get('/asset-candidates',   [MaintenanceAssetRegistrationController::class, 'candidates'])
+            ->middleware([
+                'can:maintenance.assets.candidates.view',
+                'can:maintenance.assets.view-all-companies',
+            ])->name('asset-candidates.index');
+
+        Route::post('/asset-registrations/from-grn',  [MaintenanceAssetRegistrationController::class, 'store'])
+            ->middleware([
+                'can:maintenance.assets.register-from-receipt',
+                'can:maintenance.assets.manage-all-companies',
+            ])->name('asset-registrations.from-grn');
+
+        // =========================================================
+        // MAINTENANCE — MASTER KENDARAAN & ALAT BERAT
+        // =========================================================
+
+        Route::get('/vehicle-profiles',   [MaintenanceVehicleProfileController::class, 'index'])
+            ->middleware('can:maintenance.vehicles.view')
+            ->name('vehicle-profiles.index');
+
+        Route::post('/vehicle-profiles',  [MaintenanceVehicleProfileController::class, 'store'])
+            ->middleware('can:maintenance.vehicles.manage')
+            ->name('vehicle-profiles.store');
+
+        Route::get('/vehicle-profiles/{profile}',  [MaintenanceVehicleProfileController::class, 'show'])
+            ->whereNumber('profile')
+            ->middleware('can:maintenance.vehicles.view')
+            ->name('vehicle-profiles.show');
+
+        Route::patch('/vehicle-profiles/{profile}',  [MaintenanceVehicleProfileController::class, 'update'])
+            ->whereNumber('profile')
+            ->middleware('can:maintenance.vehicles.manage')
+            ->name('vehicle-profiles.update');
+    });
 
     Route::prefix('notifications')->name('notifications.')->group(function (): void {
         Route::get('/', [NotificationController::class, 'index'])->name('index');

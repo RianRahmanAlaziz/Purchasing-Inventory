@@ -25,12 +25,15 @@ final class ItemResource extends JsonResource
             'is_low_stock' => (bool) $this->is_low_stock,
             'stock_level' => $this->stock_level,
             'is_active' => (bool) $this->is_active,
-            'category' => $this->whenLoaded('category', fn (): ?array => $this->category === null ? null : [
-                'id' => $this->category->id,
-                'code' => $this->category->code,
-                'name' => $this->category->name,
-                'is_active' => (bool) $this->category->is_active,
-            ]
+            'is_asset_trackable' => (bool) $this->is_asset_trackable,
+            'category' => $this->whenLoaded(
+                'category',
+                fn(): ?array => $this->category === null ? null : [
+                    'id' => $this->category->id,
+                    'code' => $this->category->code,
+                    'name' => $this->category->name,
+                    'is_active' => (bool) $this->category->is_active,
+                ]
             ),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

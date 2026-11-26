@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use App\Domain\Maintenance\Models\MaintenanceAsset;
+use App\Domain\Maintenance\Policies\MaintenanceAssetPolicy;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -19,6 +22,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        Gate::policy(
+            MaintenanceAsset::class,
+            MaintenanceAssetPolicy::class,
+        );
     }
 }
