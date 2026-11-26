@@ -12,7 +12,10 @@ final class ItemPolicy
     {
         return $user !== null && (
             ($user->hasRole('super_admin', 'web') && $user->can('items.manage'))
-            || ($user->hasRole('staff_hr', 'web') && $user->can('items.create'))
+            || (
+                ($user->hasRole('staff_hr', 'web') || $user->hasRole('staff_hr_ga', 'web'))
+                && $user->can('items.create')
+            )
         );
     }
 }

@@ -142,6 +142,65 @@ final class RoleAccessTest extends TestCase
         $this->postJson("/api/v1/items/{$item}/stock-adjustments", [])->assertForbidden();
     }
 
+    public function test_staff_hr_ga_can_create_stock_item_with_items_create_but_cannot_edit_or_delete(): void
+    {
+        $role = Role::findOrCreate('staff_hr_ga', 'web');
+        $role->syncPermissions(['items.view', 'items.create', 'items.manage', 'inventory.view']);
+        $staff = User::factory()->create(['is_active' => true])->assignRole($role);
+        Sanctum::actingAs($staff, ['*']);
+
+        $category = Category::query()->create([
+            'code' => 'GA-CAT',
+            'name' => 'Kategori Stok GA',
+            'is_active' => true,
+        ]);
+
+        $this->getJson('/api/v1/items/category-options')->assertOk()
+            ->assertJsonFragment(['id' => $category->id, 'name' => $category->name]);
+        $this->getJson('/api/v1/categories')->assertForbidden();
+
+        $payload = [
+            'category_id' => $category->id,
+            'sku' => 'GA-NEW-001',
+            'name' => 'Barang GA Baru',
+            'unit' => 'pcs',
+        ];
+        $itemId = $this->postJson('/api/v1/items', $payload)->assertCreated()
+            ->assertJsonPath('data.stock_quantity', '0.000')
+            ->json('data.id');
+
+        $this->assertDatabaseHas('items', ['id' => $itemId, 'sku' => 'GA-NEW-001']);
+        $this->patchJson("/api/v1/items/{$itemId}", ['name' => 'Barang Diubah'])
+            ->assertForbidden();
+        $this->deleteJson("/api/v1/items/{$itemId}")->assertForbidden();
+        $this->postJson("/api/v1/items/{$itemId}/stock-adjustments", [])
+            ->assertForbidden();
+    }
+
+    public function test_staff_hr_ga_without_items_create_cannot_create_even_with_items_manage(): void
+    {
+        $role = Role::findOrCreate('staff_hr_ga', 'web');
+        $role->syncPermissions(['items.view', 'items.manage', 'inventory.view']);
+        $staff = User::factory()->create(['is_active' => true])->assignRole($role);
+        Sanctum::actingAs($staff, ['*']);
+
+        $category = Category::query()->create([
+            'code' => 'GA-NO-CREATE',
+            'name' => 'Kategori GA Tanpa Akses Buat',
+            'is_active' => true,
+        ]);
+        $this->getJson('/api/v1/items')->assertOk();
+        $this->getJson('/api/v1/items/category-options')->assertForbidden();
+        $this->postJson('/api/v1/items', [
+            'category_id' => $category->id,
+            'sku' => 'GA-NOT-ALLOWED',
+            'name' => 'Barang Tidak Diizinkan',
+            'unit' => 'pcs',
+        ])->assertForbidden();
+
+        $this->assertDatabaseMissing('items', ['sku' => 'GA-NOT-ALLOWED']);
+    }
+
     public function test_user_without_role_or_employee_cannot_enter_api(): void
     {
         $user = User::factory()->create([
