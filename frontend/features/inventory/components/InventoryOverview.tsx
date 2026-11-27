@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useApiData } from "@/features/modules/hooks/useApiData";
+import { Icon } from "@/components/ui/Icon";
 import { formatQuantity } from "@/lib/quantity";
 import { CompanySelect } from "./CompanySelect";
 
@@ -21,21 +22,24 @@ export function InventoryOverview({ companyId = "", revision = 0, showCompanyFil
   const overview = useApiData<Overview>("inventory/overview" + (selected ? "?company_id=" + selected : ""), revision);
   const totals = overview.data?.totals;
   const metrics = totals ? [
-    ["Stok tersedia", formatQuantity(totals.available)],
-    ["Dalam perjalanan", formatQuantity(totals.in_transit)],
-    ["Aset tersedia", formatQuantity(totals.assets_available)],
-    ["Aset digunakan", formatQuantity(totals.assets_in_use)],
-    ["Stok lama belum dipetakan", formatQuantity(totals.unallocated)],
+    { label: "Stok tersedia", value: totals.available, icon: "stock", tone: "mint" },
+    { label: "Dalam perjalanan", value: totals.in_transit, icon: "truck", tone: "blue" },
+    { label: "Aset tersedia", value: totals.assets_available, icon: "box", tone: "lavender" },
+    { label: "Aset digunakan", value: totals.assets_in_use, icon: "employee", tone: "peach" },
+    { label: "Belum dipetakan", value: totals.unallocated, icon: "alert", tone: Number(totals.unallocated) > 0 ? "peach" : "blue" },
   ] : [];
 
   return <section className="panel module-panel inventory-overview">
     <div className="panel-header"><div><h2>Persediaan per PT</h2><p>{selected ? "Saldo PT yang dipilih." : "Ringkasan seluruh PT. Jumlah merupakan gabungan satuan barang."}</p></div>
-      {showCompanyFilter && <CompanySelect value={selection} onChange={setSelection} label="Filter PT persediaan"/>}
+      {showCompanyFilter && <CompanySelect compact value={selection} onChange={setSelection} label="Filter PT persediaan"/>}
     </div>
     {overview.loading && <p className="loading-state" role="status">Memuat persediaan...</p>}
     {overview.error && <p className="form-error" role="alert">{overview.error}</p>}
     {totals && <>
-      <div className="detail-grid">{metrics.map(([label, value]) => <p key={label}>{label}<strong>{value}</strong></p>)}</div>
+      <div className="inventory-metrics">{metrics.map(metric => <div className="inventory-metric" key={metric.label}>
+        <span className={"stat-icon " + metric.tone}><Icon name={metric.icon} size={17}/></span>
+        <div><small>{metric.label}</small><strong>{formatQuantity(metric.value)}</strong></div>
+      </div>)}</div>
       {Number(totals.unallocated) > 0 && <p className="form-hint">Stok lama belum ditetapkan ke PT. Petakan melalui detail Stok Barang setelah lokasi fisik diperiksa.</p>}
       {showCompanyFilter && <>
         <div className="table-scroll"><table>

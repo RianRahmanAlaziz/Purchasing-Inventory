@@ -55,6 +55,8 @@ export type ApiModule = {
   title: string;
   description: string;
   columns: Column[];
+  /** Kunci kolom yang tampil di tabel. Kolom lain tetap ikut ekspor, pencarian, dan detail. */
+  listColumns?: string[];
   date: string;
   status?: string;
   statusValue?: (row: Row) => string;

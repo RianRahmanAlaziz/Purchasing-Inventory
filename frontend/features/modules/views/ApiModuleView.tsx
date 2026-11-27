@@ -71,6 +71,11 @@ function text(row: Row, column: Column) {
 
 function Cell({ row, column }: { row: Row; column: Column }) {
   const value = get(row, column.key);
+  if (column.key === "quantity_change" && value != null && value !== "") {
+    const amount = Number(value);
+    const tone = amount > 0 ? "positive" : amount < 0 ? "negative" : "neutral";
+    return <span className={"quantity-change " + tone}>{amount > 0 ? "+" : ""}{text(row, column)}</span>;
+  }
   if (column.format !== "status" || value == null) return <>{text(row, column)}</>;
   const tone = column.key === "is_low_stock" ? (value ? "amber" : "green")
     : ["rejected", "cancelled", "discrepancy", "overstock", false].includes(value as string | boolean) ? "red"
@@ -249,6 +254,8 @@ export function ApiModuleView({ slug }: { slug: string }) {
   const filtered = rows.filter(row =>
     (!status || statusValue(row) === status)
     && config.columns.some(column => text(row, column).toLowerCase().includes(query.trim().toLowerCase())));
+  const tableColumns = config.listColumns
+    ? config.columns.filter(column => config.listColumns!.includes(column.key)) : config.columns;
   const pagination = usePagination(filtered, JSON.stringify([slug, query, status, companyId]));
 
   function refresh() { setRevision(current => current + 1); }
@@ -311,16 +318,16 @@ export function ApiModuleView({ slug }: { slug: string }) {
       <div className="panel-header"><div><h2>Daftar {config.title} <span className="count-pill">{filtered.length}</span></h2></div>
         <Button variant="secondary" disabled={loading} onClick={refresh}>Muat ulang</Button></div>
       <div className="table-toolbar">
-        {companyScoped && <CompanySelect value={companyId} onChange={value => { setCompanyId(value); setSelection(null); }} label="Filter PT"/>}
         <label className="table-search"><Icon name="search" size={18}/><input aria-label={"Cari " + config.title} placeholder="Cari data..." value={query} onChange={event => setQuery({ search, value: event.target.value })}/></label>
+        {companyScoped && <CompanySelect compact value={companyId} onChange={value => { setCompanyId(value); setSelection(null); }} label="Filter PT"/>}
         {statusKey && <select aria-label="Filter status" value={status} onChange={event => setStatus({ filter, value: event.target.value })}>
           <option value="">Semua status</option>{choices.map(value => <option key={value} value={value}>{statusText(value === "true" ? true : value === "false" ? false : value, statusKey)}</option>)}
         </select>}
       </div>
       {loading ? <p className="loading-state" role="status">Memuat data...</p> : error ? <p className="form-error" role="alert">{error}</p> : filtered.length ? <>
         <div className="table-scroll"><table>
-          <thead><tr>{config.columns.map(column => <th key={column.key}>{column.label}</th>)}<th>Aksi</th></tr></thead>
-          <tbody>{pagination.items.map(row => <tr key={row.id}>{config.columns.map(column => <td key={column.key}><Cell row={row} column={column}/></td>)}
+          <thead><tr>{tableColumns.map(column => <th key={column.key}>{column.label}</th>)}<th>Aksi</th></tr></thead>
+          <tbody>{pagination.items.map(row => <tr key={row.id}>{tableColumns.map(column => <td key={column.key}><Cell row={row} column={column}/></td>)}
             <td><Button variant="secondary" onClick={() => { setNotice(""); setSelection({ mode: "detail", row }); }}>Lihat</Button></td>
           </tr>)}</tbody>
         </table></div>
