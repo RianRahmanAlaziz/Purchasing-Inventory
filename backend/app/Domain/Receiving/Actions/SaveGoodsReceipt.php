@@ -27,6 +27,7 @@ final class SaveGoodsReceipt
             $grn = GoodsReceipt::query()->create([
                 'grn_number' => 'GRN-'.(string) Str::ulid(),
                 'purchase_order_id' => $po->id,
+                'company_id' => $data['company_id'] ?? $po->company_id,
                 'created_by' => $actorId,
                 'received_date' => $data['received_date'],
                 'status' => 'pending',
@@ -61,7 +62,7 @@ final class SaveGoodsReceipt
             }
 
             $grn->update(array_intersect_key($data, array_flip([
-                'received_date', 'notes',
+                'received_date', 'notes', 'company_id',
             ])));
 
             return $this->loaded($grn);

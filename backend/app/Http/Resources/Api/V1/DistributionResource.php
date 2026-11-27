@@ -15,6 +15,10 @@ final class DistributionResource extends JsonResource
             'id' => $this->id,
             'distribution_number' => $this->distribution_number,
             'employee_id' => $this->employee_id,
+            'company_id' => $this->company_id,
+            'company' => $this->whenLoaded('company', fn (): ?array => $this->company === null ? null : [
+                'id' => $this->company->id, 'name' => $this->company->name,
+            ]),
             'recipient_name' => $this->recipient_name_snapshot
                 ?? ($this->relationLoaded('employee') ? $this->employee?->name : null),
             'employee' => $this->whenLoaded('employee', fn (): ?array => $this->employee === null
@@ -50,6 +54,7 @@ final class DistributionResource extends JsonResource
                         'name' => $item?->name,
                         'unit' => $item?->unit,
                         'quantity' => $line->quantity,
+                        'asset_ids' => $line->asset_ids ?? [],
                         'notes' => $line->notes,
                         'stock_movement_id' => $movement?->id,
                     ];

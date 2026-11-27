@@ -22,6 +22,7 @@ final class ItemController extends Controller
     public function index(Request $request): JsonResponse
     {
         $filters = $request->validate([
+            'company_id' => ['sometimes', 'integer', 'exists:companies,id'],
             'search' => ['sometimes', 'string', 'max:100'],
             'category_id' => ['sometimes', 'integer', Rule::exists('categories', 'id')],
             'is_active' => ['sometimes', 'boolean'],
@@ -30,8 +31,8 @@ final class ItemController extends Controller
             'page' => ['sometimes', 'integer', 'min:1'],
         ]);
 
-        $query = Item::query()->inInventory()->withStockAlert()
-            ->with('category:id,code,name,is_active');
+        $query = Item::query()->inInventory()->withStockAlert(isset($filters['company_id']) ? (int) $filters['company_id'] : null)
+            ->with('balances.company')->with('category:id,code,name,is_active');
 
         if (isset($filters['search']) && trim($filters['search']) !== '') {
             $search = trim($filters['search']);
@@ -54,13 +55,9 @@ final class ItemController extends Controller
 
         if (array_key_exists('low_stock', $filters)) {
             if (filter_var($filters['low_stock'], FILTER_VALIDATE_BOOLEAN)) {
-                $query->lowStock();
+                $query->whereRaw(Item::stockExpression(isset($filters['company_id']) ? (int) $filters['company_id'] : null).' <= items.minimum_stock');
             } else {
-                $query->whereColumn(
-                    'items.stock_quantity',
-                    '>',
-                    'items.minimum_stock'
-                );
+                $query->whereRaw(Item::stockExpression(isset($filters['company_id']) ? (int) $filters['company_id'] : null).' > items.minimum_stock');
             }
         }
 
@@ -86,8 +83,9 @@ final class ItemController extends Controller
 
     public function show(Request $request, Item $item): JsonResponse
     {
-        $item = Item::query()->inInventory()->withStockAlert()
-            ->with('category:id,code,name,is_active')
+        $filters = $request->validate(['company_id' => ['sometimes', 'integer', 'exists:companies,id']]);
+        $item = Item::query()->inInventory()->withStockAlert(isset($filters['company_id']) ? (int) $filters['company_id'] : null)
+            ->with('balances.company')->with('category:id,code,name,is_active')
             ->findOrFail($item->getKey());
 
         return ApiResponse::success(

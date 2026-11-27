@@ -63,6 +63,7 @@ final class RequestDistribution
                 'employee_id' => $employee?->id,
                 'recipient_name_snapshot' => $recipientName,
                 'requested_by' => $actor->id,
+                'company_id' => $data['company_id'],
                 'purpose' => $data['purpose'],
                 'status' => DistributionStatus::Preparing->value,
                 'requested_at' => now(),
@@ -80,10 +81,18 @@ final class RequestDistribution
                     throw new DistributionConflict('Kuantitas distribusi harus lebih dari nol.');
                 }
 
+                $item = Item::query()->findOrFail($line['item_id']);
+                $assetIds = $line['asset_ids'] ?? [];
+                if (($item->item_type === 'office_asset' && ($qty % 1000 !== 0 || count($assetIds) * 1000 !== $qty))
+                    || ($item->item_type !== 'office_asset' && $assetIds !== [])) {
+                    throw new DistributionConflict('Pilih kode aset tepat sejumlah unit utuh, hanya untuk barang jenis aset kantor.');
+                }
+
                 $distribution->items()->create([
                     'item_id' => $line['item_id'],
                     'quantity' => StockDecimal::format($qty),
                     'notes' => $line['notes'] ?? null,
+                    'asset_ids' => $line['asset_ids'] ?? [],
                 ]);
             }
 

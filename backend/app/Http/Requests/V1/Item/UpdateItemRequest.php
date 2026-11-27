@@ -51,6 +51,7 @@ final class UpdateItemRequest extends FormRequest
                 Rule::unique('items', 'sku')->ignore($id),
             ],
             'name' => ['sometimes', 'required', 'string', 'max:200'],
+            'item_type' => ['sometimes', 'required', 'in:consumable,office_asset'],
             'unit' => [
                 'sometimes', 'required', 'string', 'max:30',
                 'regex:/^[a-z][a-z0-9.\/_-]*$/',

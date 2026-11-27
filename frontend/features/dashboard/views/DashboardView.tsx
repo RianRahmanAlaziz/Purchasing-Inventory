@@ -9,6 +9,7 @@ import { canAccessModule } from "@/features/dashboard/constants/navigation";
 import { useApiData } from "@/features/modules/hooks/useApiData";
 import { documentMoney } from "@/features/purchase-orders/utils/totals";
 import { formatQuantity } from "@/lib/quantity";
+import { InventoryOverview } from "@/features/inventory/components/InventoryOverview";
 
 type Overview = { sections: {
   purchase_orders?: { total: number; by_status: Record<string, number>; approved_or_later_amount: string };
@@ -60,6 +61,7 @@ export function DashboardView() {
           : <div className="stat-card" key={stat.title}>{content}</div>;
       })}</div>
       {!Object.keys(section).length && <p className="form-hint">Belum ada ringkasan yang tersedia untuk akun ini.</p>}
+      {user.permissions.includes("inventory.view") && <InventoryOverview revision={revision} showCompanyFilter/>}
       <div className="bottom-grid">
         {section.inventory && <section className="panel low-stock-panel">
           <div className="panel-header"><div><h2>Stok Menipis</h2><p>Barang yang mencapai stok minimum.</p></div><Link className="text-link" href="/items">Lihat stok</Link></div>

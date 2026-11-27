@@ -26,6 +26,7 @@ final class StoreStockAdjustmentRequest extends FormRequest
         $quantityPattern = 'regex:/^(?:0|[1-9][0-9]{0,14})(?:\.[0-9]{1,3})?$/D';
 
         return [
+            'company_id' => ['required', 'integer', 'exists:companies,id,deleted_at,NULL'],
             'expected_quantity' => ['required', 'string', $quantityPattern],
             'target_quantity' => ['required', 'string', $quantityPattern],
             'reason' => ['required', 'string', 'min:5', 'max:1000'],

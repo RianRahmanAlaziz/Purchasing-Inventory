@@ -13,7 +13,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
 import { usePagination } from "@/components/ui/hooks/usePagination";
 import { api } from "@/lib/api";
-import { formatQuantity, quantityInput } from "@/lib/quantity";
+import { formatQuantity } from "@/lib/quantity";
 import { formatEffectiveTaxRate } from "@/lib/tax-rate";
 import { documentMoney } from "@/features/purchase-orders/utils/totals";
 import { ApiRecordEditor } from "../components/ApiRecordEditor";
@@ -24,6 +24,8 @@ import { DistributionLetter } from "@/features/distributions/components/Distribu
 import { apiModules } from "../constants/apiModules";
 import { useApiData } from "../hooks/useApiData";
 import { datePart, get, records, type ApiModule, type Column, type Operation, type Row } from "../api-types";
+import { CompanySelect } from "@/features/inventory/components/CompanySelect";
+import { InventoryOverview } from "@/features/inventory/components/InventoryOverview";
 
 const statuses: Record<string, string> = {
   true: "Aktif", false: "Nonaktif",
@@ -37,6 +39,9 @@ const statuses: Record<string, string> = {
   pending_verification: "Menunggu verifikasi", verified: "Terverifikasi", not_uploaded: "Belum diunggah", uploaded: "Sudah diunggah", received: "Diterima",
   addition: "Tambahan", withholding: "Potongan",
   low_stock: "Stok menipis", normal_stock: "Tersedia", overstock: "Melebihi maksimum",
+  consumable: "Barang Habis Pakai", office_asset: "Aset Kantor", available: "Tersedia", in_use: "Digunakan", in_transit: "Dalam perjalanan", damaged: "Rusak",
+  good: "Baik", fair: "Cukup baik", transfer_out: "Transfer keluar", transfer_in: "Transfer masuk", legacy_allocation: "Pemetaan stok lama",
+  assign: "Penugasan", reassign: "Ganti pemegang", return: "Pengembalian", condition: "Pemeriksaan kondisi", transfer_sent: "Transfer dikirim", transfer_received: "Transfer diterima", registered: "Registrasi aset",
 };
 
 function statusText(value: unknown, field: string) {
@@ -48,6 +53,7 @@ function statusText(value: unknown, field: string) {
 
 function text(row: Row, column: Column) {
   const value = get(row, column.key);
+  if ((value == null || value === "") && column.key === "company.name") return "Belum dipetakan";
   if (value == null || value === "") return "—";
   switch (column.format) {
     case "date": return datePart(value).split("-").reverse().join("/");
@@ -73,13 +79,15 @@ function Cell({ row, column }: { row: Row; column: Column }) {
   return <Badge tone={tone}>{text(row, column)}</Badge>;
 }
 
-function Details({ row: summary, config, close, edit, act, preview, revision, refresh }: {
+function Details({ row: summary, config, close, edit, act, preview, revision, refresh, companyId }: {
   row: Row; config: ApiModule; close: () => void; edit: (row: Row) => void;
   act: (operation: Operation, row: Row) => void; preview: (row: Row) => void;
   revision: number; refresh: () => void;
+  companyId: string;
 }) {
   const user = useSession();
-  const detail = useApiData<Row>(config.loadDetail ? config.endpoint + "/" + summary.id : null, revision);
+  const detail = useApiData<Row>(config.loadDetail ? config.endpoint + "/" + summary.id
+    + (config.endpoint === "items" && companyId ? "?company_id=" + companyId : "") : null, revision);
   const row = detail.data ?? summary;
   const operations = (config.operations?.(row, user) ?? [])
     .filter(operation => !operation.permission || user.permissions.includes(operation.permission));
@@ -134,24 +142,33 @@ function Details({ row: summary, config, close, edit, act, preview, revision, re
   </Modal>;
 }
 
-function OperationDialog({ row, config, operation, close, done }: {
+function OperationDialog({ row, config, operation, close, done, companyId: initialCompanyId }: {
   row: Row; config: ApiModule; operation: Operation; close: () => void; done: () => void;
+  companyId: string;
 }) {
   const [reason, setReason] = useState("");
-  const [target, setTarget] = useState(quantityInput(row.stock_quantity));
-  const [idempotencyKey] = useState(() => operation.adjustment ? crypto.randomUUID() : "");
+  const [target, setTarget] = useState("");
+  const [companyId, setCompanyId] = useState(initialCompanyId);
+  const [holderName, setHolderName] = useState("");
+  const [condition, setCondition] = useState(String(row.condition ?? "good"));
+  const [serialNumber, setSerialNumber] = useState(String(row.serial_number ?? ""));
+  const [idempotencyKey] = useState(() => operation.adjustment || operation.reconcile || operation.assetAction ? crypto.randomUUID() : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const balance = useApiData<Row>(operation.adjustment && companyId ? `items/${row.id}?company_id=${companyId}` : null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || (operation.adjustment && (!companyId || balance.loading || !balance.data)) || (operation.location && !companyId)) return;
     setBusy(true);
     setError("");
     try {
-      const path = [config.endpoint, row.id, operation.suffix].filter(Boolean).join("/");
-      const body = operation.adjustment
-        ? { expected_quantity: String(row.stock_quantity), target_quantity: target.trim(), reason: reason.trim() }
+      const path = operation.reconcile ? "inventory/reconcile" : [config.endpoint, row.id, operation.suffix].filter(Boolean).join("/");
+      const body = operation.location ? { company_id: Number(companyId) } : operation.adjustment
+        ? { company_id: Number(companyId), expected_quantity: String(balance.data?.stock_quantity), target_quantity: target.trim(), reason: reason.trim() }
+        : operation.reconcile ? { item_id: row.id, company_id: Number(companyId), quantity: target.trim(), reason: reason.trim(), idempotency_key: idempotencyKey }
+        : operation.assetAction ? { holder_name: holderName.trim(), condition, reason: reason.trim(), operation_key: idempotencyKey,
+          ...(operation.assetAction === "condition" ? { serial_number: serialNumber.trim() || null } : {}) }
         : operation.reason ? { reason: reason.trim() } : undefined;
       await api(path, {
         method: operation.method ?? "POST", body,
@@ -167,14 +184,30 @@ function OperationDialog({ row, config, operation, close, done }: {
   return <Modal title={operation.label} onClose={() => { if (!busy) close(); }}>
     <form className="order-form company-form" onSubmit={event => void submit(event)}>
       <p>{operation.method === "DELETE" ? "Hapus data " : "Konfirmasi aksi untuk "}{text(row, config.columns[0])}?</p>
+      {operation.location && <CompanySelect required value={companyId} onChange={setCompanyId} label="PT asal distribusi" disabled={busy}/>}
       {operation.adjustment && <>
-        <p>Saldo saat ini {formatQuantity(row.stock_quantity)} {String(row.unit)}</p>
+        <CompanySelect required value={companyId} onChange={value => { setCompanyId(value); setTarget(""); }} label="PT penyesuaian stok" disabled={busy}/>
+        {balance.loading && <p role="status">Memuat saldo PT...</p>}
+        {balance.error && <p className="form-error" role="alert">{balance.error}</p>}
+        {balance.data && <p>Saldo PT saat ini {formatQuantity(balance.data.stock_quantity)} {String(row.unit)}</p>}
         <label>Saldo yang benar<input required inputMode="decimal" pattern="(?:0|[1-9][0-9]*)(?:[.][0-9]{1,3})?" value={target} onChange={event => setTarget(event.target.value)}/></label>
       </>}
-      {(operation.reason || operation.adjustment) && <label>Alasan<textarea required minLength={5} maxLength={operation.adjustment ? 1000 : 2000}
+      {operation.reconcile && <>
+        <p>Stok lama belum dipetakan: {formatQuantity(row.unallocated_quantity)} {String(row.unit)}. Tetapkan lokasi berdasarkan pemeriksaan fisik.</p>
+        <CompanySelect required value={companyId} onChange={setCompanyId} label="PT pemilik stok lama" disabled={busy}/>
+        <label>Jumlah dipetakan<input required inputMode="decimal" pattern="(?:0|[1-9][0-9]*)(?:[.][0-9]{1,3})?" value={target} onChange={event => setTarget(event.target.value)}/></label>
+      </>}
+      {operation.assetAction && <>
+        {["assign", "reassign"].includes(operation.assetAction) && <label>Nama pemegang<input required maxLength={200} value={holderName} onChange={event => setHolderName(event.target.value)}/></label>}
+        {["return", "condition"].includes(operation.assetAction) && <label>Kondisi setelah pemeriksaan<select value={condition} onChange={event => setCondition(event.target.value)}>
+          <option value="good">Baik</option><option value="fair">Cukup baik</option><option value="damaged">Rusak</option>
+        </select></label>}
+        {operation.assetAction === "condition" && <label>Serial number pabrik (opsional)<input maxLength={120} value={serialNumber} onChange={event => setSerialNumber(event.target.value)}/></label>}
+      </>}
+      {(operation.reason || operation.adjustment || operation.reconcile || operation.assetAction) && <label>Alasan<textarea required minLength={5} maxLength={operation.adjustment || operation.reconcile || operation.assetAction ? 1000 : 2000}
         value={reason} onChange={event => setReason(event.target.value)}/></label>}
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="modal-actions"><Button type="button" variant="secondary" disabled={busy} onClick={close}>Kembali</Button><Button type="submit" variant={operation.variant} disabled={busy}>{busy ? "Memproses..." : operation.label}</Button></div>
+      <div className="modal-actions"><Button type="button" variant="secondary" disabled={busy} onClick={close}>Kembali</Button><Button type="submit" variant={operation.variant} disabled={busy || (!!operation.adjustment && (!companyId || balance.loading || !balance.data))}>{busy ? "Memproses..." : operation.label}</Button></div>
     </form>
   </Modal>;
 }
@@ -189,6 +222,8 @@ export function ApiModuleView({ slug }: { slug: string }) {
   const create = config.mutations?.create;
   const canCreate = !!config.fields && (typeof create === "function" ? create(user) : !!create && user.permissions.includes(create));
   const params = useSearchParams();
+  const [companyId, setCompanyId] = useState(() => /^[1-9]\d*$/.test(params.get("company_id") ?? "") ? params.get("company_id")! : "");
+  const companyScoped = ["items", "stock-movements", "assets"].includes(slug);
   const [revision, setRevision] = useState(0);
   const search = params.get("q") ?? "";
   const filter = params.get("status") ?? "";
@@ -204,7 +239,9 @@ export function ApiModuleView({ slug }: { slug: string }) {
   const [notice, setNotice] = useState("");
   const [importingPpn, setImportingPpn] = useState(false);
   const [importError, setImportError] = useState("");
-  const { data, loading, error } = useApiData<Row[]>(config.listEndpoint ?? config.endpoint, revision, true);
+  const basePath = config.listEndpoint ?? config.endpoint;
+  const listPath = basePath + (companyScoped && companyId ? (basePath.includes("?") ? "&" : "?") + "company_id=" + companyId : "");
+  const { data, loading, error } = useApiData<Row[]>(listPath, revision, true);
   const rows = data ?? [];
   const statusKey = config.status;
   const statusValue = config.statusValue ?? (row => String(get(row, statusKey ?? "")));
@@ -212,7 +249,7 @@ export function ApiModuleView({ slug }: { slug: string }) {
   const filtered = rows.filter(row =>
     (!status || statusValue(row) === status)
     && config.columns.some(column => text(row, column).toLowerCase().includes(query.trim().toLowerCase())));
-  const pagination = usePagination(filtered, JSON.stringify([slug, query, status]));
+  const pagination = usePagination(filtered, JSON.stringify([slug, query, status, companyId]));
 
   function refresh() { setRevision(current => current + 1); }
   function closeSelection() {
@@ -269,10 +306,12 @@ export function ApiModuleView({ slug }: { slug: string }) {
     </div></div>
     {notice && <p className="form-hint" role="status">{notice}</p>}
     {importError && <p className="form-error" role="alert">{importError}</p>}
+    {slug === "items" && user.permissions.includes("inventory.view") && <InventoryOverview companyId={companyId} revision={revision}/>}
     <section className="panel module-panel">
       <div className="panel-header"><div><h2>Daftar {config.title} <span className="count-pill">{filtered.length}</span></h2></div>
         <Button variant="secondary" disabled={loading} onClick={refresh}>Muat ulang</Button></div>
       <div className="table-toolbar">
+        {companyScoped && <CompanySelect value={companyId} onChange={value => { setCompanyId(value); setSelection(null); }} label="Filter PT"/>}
         <label className="table-search"><Icon name="search" size={18}/><input aria-label={"Cari " + config.title} placeholder="Cari data..." value={query} onChange={event => setQuery({ search, value: event.target.value })}/></label>
         {statusKey && <select aria-label="Filter status" value={status} onChange={event => setStatus({ filter, value: event.target.value })}>
           <option value="">Semua status</option>{choices.map(value => <option key={value} value={value}>{statusText(value === "true" ? true : value === "false" ? false : value, statusKey)}</option>)}
@@ -295,11 +334,11 @@ export function ApiModuleView({ slug }: { slug: string }) {
       ? <CreateOrderModal row={selection.row} onClose={() => setSelection({ mode: "detail", row: selection.row })} onSaved={saved}/>
       : <ApiRecordEditor config={config} row={selection.row}
         close={() => setSelection({ mode: "detail", row: selection.row })} saved={saved}/>)}
-    {selection?.mode === "detail" && <Details row={selection.row} config={config} close={closeSelection} revision={revision} refresh={refresh}
+    {selection?.mode === "detail" && <Details row={selection.row} config={config} close={closeSelection} revision={revision} refresh={refresh} companyId={companyId}
       edit={row => setSelection({ mode: "edit", row })}
       act={(operation, row) => setSelection({ mode: "operation", row, operation })}
       preview={row => setSelection({ mode: "preview", row })}/>}
-    {selection?.mode === "operation" && <OperationDialog row={selection.row} config={config} operation={selection.operation}
+    {selection?.mode === "operation" && <OperationDialog row={selection.row} config={config} operation={selection.operation} companyId={companyId}
       close={() => setSelection({ mode: "detail", row: selection.row })} done={saved}/>}
     {selection?.mode === "preview" && (slug === "distributions"
       ? <DistributionLetter row={selection.row} close={() => setSelection({ mode: "detail", row: selection.row })}/>

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Api\V1;
 
 use App\Domain\Category\Models\Category;
+use App\Domain\Company\Models\Company;
 use App\Domain\Employee\Models\Department;
 use App\Domain\Employee\Models\Employee;
 use App\Domain\Item\Models\Item;
@@ -28,6 +29,8 @@ final class GoodsReceiptApiTest extends TestCase
 {
     use DatabaseTransactions;
 
+    private Company $company;
+
     private Department $department;
 
     private Employee $employee;
@@ -47,6 +50,7 @@ final class GoodsReceiptApiTest extends TestCase
         parent::setUp();
         $this->assertSame('testing', app()->environment());
         $this->assertSame('purchasing_test', DB::selectOne('SELECT DATABASE() AS name')->name);
+        $this->company = Company::query()->create(['name' => 'PT Pengujian GoodsReceiptApiTest', 'address' => 'Alamat pengujian']);
 
         foreach (['grn.view', 'grn.create', 'grn.confirm', 'po.approve.hr'] as $permission) {
             Permission::findOrCreate($permission, 'web');
@@ -94,6 +98,7 @@ final class GoodsReceiptApiTest extends TestCase
     private function po(string $status = 'sent'): PurchaseOrder
     {
         $po = app(SaveDraftPurchaseOrder::class)->create([
+            'company_id' => $this->company->id,
             'supplier_id' => $this->supplier->id,
             'requested_for_employee_id' => $this->employee->id,
             'requested_for_department_id' => $this->department->id,

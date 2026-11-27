@@ -17,7 +17,7 @@ class StorePurchaseOrderRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'company_id' => ['sometimes', 'nullable', 'integer', Rule::exists('companies', 'id')->whereNull('deleted_at')],
+            'company_id' => ['required', 'integer', Rule::exists('companies', 'id')->whereNull('deleted_at')],
             'supplier_address' => ['sometimes', 'nullable', 'string', 'max:5000'],
             'tax_scope' => ['sometimes', Rule::in(['order', 'line'])],
             'supplier_id' => ['required_without:supplier_name', 'nullable', 'integer', Rule::exists('suppliers', 'id')->where('is_active', true)],

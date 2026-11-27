@@ -2,6 +2,7 @@ import { workspaceToday } from "@/lib/export-period";
 import { ITEM_UNITS } from "@/lib/item-units";
 import { canCreateStockItem } from "@/features/items/utils/access";
 import { formatEffectiveTaxRate } from "@/lib/tax-rate";
+import { formatQuantity } from "@/lib/quantity";
 import { get, records, type ApiModule, type Column, type Field, type Operation, type OptionSource, type Row } from "../api-types";
 
 const status: Column = { key: "status", label: "Status", format: "status" };
@@ -37,6 +38,21 @@ const items = options("items?is_active=1", "sku");
 const categories = options("items/category-options", "code");
 
 const itemField: Field = { key: "item_id", label: "Barang", type: "id", required: true, source: items };
+const inventoryCompanies = options("inventory/companies", "name", "");
+const assetUnits: Field = { key: "asset_ids", label: "Unit aset (khusus Aset Kantor)", type: "multiple", source: {
+  path: values => {
+    const companyId = values.company_id || values.from_company_id;
+    return companyId && values.item_id ? `inventory/asset-options?company_id=${companyId}&item_id=${values.item_id}&status=available` : null;
+  },
+  options: rows => rows.map(row => ({ value: String(row.id), label: String(row.asset_code) })),
+} };
+const companyItemField: Field = { ...itemField, source: {
+  path: values => {
+    const companyId = values.company_id || values.from_company_id;
+    return companyId ? `items?is_active=1&company_id=${companyId}` : null;
+  },
+  options: rows => rows.filter(row => Number(row.stock_quantity) > 0).map(row => ({ value: String(row.id), label: `${row.sku} · ${row.name} · tersedia ${formatQuantity(row.stock_quantity)} ${row.unit}` })),
+} };
 const quantity: Field & Column = { key: "quantity", label: "Jumlah", type: "quantity", format: "quantity", required: true, min: 0.001 };
 const unitPrice: Field = { key: "unit_price", label: "Harga satuan", type: "money", required: true };
 const lineColumns: Column[] = [
@@ -225,21 +241,28 @@ export const apiModules: Record<string, ApiModule> = {
   items: {
     endpoint: "items", title: "Stok Barang", description: "Kelola master barang, pantau saldo, dan catat penyesuaian stok.",
     mutations: { ...manage("items.manage"), create: canCreateStockItem }, adminEditAndRemoveOnly: true,
-    columns: [{ key: "sku", label: "SKU" }, name, { key: "category.name", label: "Kategori produk" },
-      { key: "stock_quantity", label: "Stok", format: "quantity" }, { key: "minimum_stock", label: "Stok minimum", format: "quantity" },
+    columns: [{ key: "sku", label: "SKU" }, name, { key: "item_type", label: "Jenis barang", format: "status" }, { key: "category.name", label: "Kategori produk" },
+      { key: "stock_quantity", label: "Stok tersedia", format: "quantity" }, { key: "total_stock_quantity", label: "Total seluruh PT", format: "quantity" }, { key: "minimum_stock", label: "Stok minimum", format: "quantity" },
       { key: "maximum_stock", label: "Stok maksimum", format: "quantity" }, { key: "unit", label: "Satuan" },
       { key: "reference_price", label: "Harga acuan", format: "money" }, { key: "last_purchase_price", label: "Harga terakhir", format: "money" },
       { key: "stock_level", label: "Ketersediaan", format: "status" }, active],
     date: "created_at", status: "stock_level",
-    details: [{ key: "id", label: "ID barang" }],
+    details: [{ key: "id", label: "ID barang" }, { key: "unallocated_quantity", label: "Stok lama belum dipetakan", format: "quantity" }], loadDetail: true,
+    groups: [{ key: "company_balances", title: "Saldo per PT", columns: [{ key: "company_name", label: "PT" }, { key: "quantity", label: "Stok tersedia", format: "quantity" }] }],
     fields: [{ key: "sku", label: "SKU", required: true }, { ...nameField, maxLength: 200 },
       { key: "category_id", from: "category.id", label: "Kategori produk", type: "id", required: true, source: categories },
+      { key: "item_type", label: "Jenis barang", required: true, initial: "consumable", choices: [
+        { value: "consumable", label: "Barang Habis Pakai" }, { value: "office_asset", label: "Aset Kantor" },
+      ] },
       { key: "unit", label: "Satuan", required: true, initial: "pcs", choices: ITEM_UNITS.map(unit => ({ value: unit, label: unit })) },
       { key: "minimum_stock", label: "Stok minimum", type: "quantity", required: true, initial: "0" },
       { key: "maximum_stock", label: "Stok maksimum (opsional)", type: "quantity" },
       { key: "reference_price", label: "Harga acuan per satuan (Rp)", type: "money" }, activeField],
     edit: always, remove: always,
-    operations: () => [{ label: "Sesuaikan stok", suffix: "stock-adjustments", adjustment: true, permission: "inventory.adjust" }],
+    operations: row => [
+      { label: "Sesuaikan stok PT", suffix: "stock-adjustments", adjustment: true, permission: "inventory.adjust" },
+      ...(Number(row.unallocated_quantity) > 0 ? [{ label: "Petakan stok lama", reconcile: true, permission: "inventory.reconcile" }] : []),
+    ],
   },
   "purchase-orders": purchaseOrders,
   approvals: {
@@ -300,6 +323,7 @@ export const apiModules: Record<string, ApiModule> = {
         options: rows => rows.filter(row => ["sent", "received_by_supplier"].includes(String(row.status)))
           .map(row => ({ value: String(row.id), label: row.po_number + " · " + row.supplier_name_snapshot })),
       } },
+      { key: "company_id", label: "PT tujuan penerimaan", type: "id", required: true, source: inventoryCompanies },
       { key: "received_date", label: "Tanggal penerimaan", type: "date", required: true, initial: workspaceToday }, notesField,
     ],
     lines: { limit: 100, fields: [
@@ -324,15 +348,19 @@ export const apiModules: Record<string, ApiModule> = {
     columns: [{ key: "distribution_number", label: "No. Distribusi" }, { key: "recipient_name", label: "Penerima" },
       { key: "requested_at", label: "Tanggal distribusi", format: "date" }, status],
     date: "requested_at", status: "status",
-    details: [{ key: "purpose", label: "Keperluan" }, { key: "sent_at", label: "Diserahkan", format: "datetime" }],
+    details: [{ key: "company.name", label: "PT asal" }, { key: "purpose", label: "Keperluan" }, { key: "sent_at", label: "Diserahkan", format: "datetime" }],
     fields: [
+      { key: "company_id", label: "PT asal distribusi", type: "id", required: true, source: inventoryCompanies, resetLines: true },
       { key: "recipient_name", label: "Nama penerima", required: true, maxLength: 200 },
       { key: "purpose", label: "Keperluan", type: "textarea", required: true, maxLength: 5000 },
     ],
-    lines: { limit: 50, fields: [itemField, quantity, lineNotes] },
+    lines: { limit: 50, fields: [companyItemField, quantity, assetUnits, lineNotes] },
     groups: [{ key: "items", title: "Rincian barang", columns: [...lineColumns, quantity, notes] }],
     print: { label: "Surat Jalan", available: row => ["preparing", "sent", "completed", "received_by_employee"].includes(String(row.status)) },
     operations: row => {
+      if (row.company_id == null && ["requested", "approved", "preparing"].includes(String(row.status))) {
+        return [{ label: "Pilih PT asal", suffix: "location", location: true, permission: "distribution.send" }];
+      }
       switch (row.status) {
         case "requested":
         case "approved": return [{ label: "Mulai persiapan", suffix: "prepare", permission: "distribution.prepare" }];
@@ -345,11 +373,54 @@ export const apiModules: Record<string, ApiModule> = {
   "stock-movements": {
     endpoint: "stock-movements", title: "Mutasi Stok", description: "Riwayat penerimaan, distribusi, dan penyesuaian stok yang tercatat di Laravel.",
     columns: [{ key: "created_at", label: "Waktu", format: "datetime" }, { key: "item.sku", label: "SKU" }, { key: "item.name", label: "Barang" },
+      { key: "company.name", label: "PT" },
       { key: "movement_type", label: "Jenis mutasi", format: "status" }, { key: "quantity_change", label: "Perubahan", format: "quantity" },
       { key: "balance_before", label: "Saldo awal", format: "quantity" }, { key: "balance_after", label: "Saldo akhir", format: "quantity" }],
     details: [{ key: "item.unit", label: "Satuan" }, { key: "reason", label: "Alasan" },
+      { key: "from_company.name", label: "PT asal" }, { key: "to_company.name", label: "PT tujuan" },
+      { key: "transfer.transfer_number", label: "No. Transfer" }, { key: "actor_name", label: "Petugas" },
       { key: "goods_receipt_item_id", label: "ID baris penerimaan" }, { key: "distribution_item_id", label: "ID baris distribusi" },
       { key: "stock_adjustment_id", label: "ID penyesuaian" }],
     date: "created_at", status: "movement_type",
+  },
+  "inventory-transfers": {
+    endpoint: "inventory-transfers", title: "Transfer Antar-PT", description: "Pindahkan barang antar-PT. Stok tujuan bertambah setelah transfer diterima.",
+    mutations: { create: "inventory.transfer.create", edit: "inventory.transfer.create" },
+    columns: [{ key: "transfer_number", label: "No. Transfer" }, { key: "from_company.name", label: "PT asal" }, { key: "to_company.name", label: "PT tujuan" }, { key: "transfer_date", label: "Tanggal transfer", format: "date" }, status],
+    details: [notes, { key: "sent_at", label: "Dikirim", format: "datetime" }, { key: "received_at", label: "Diterima", format: "datetime" }],
+    date: "transfer_date", status: "status", loadDetail: true, edit: draft,
+    fields: [
+      { key: "from_company_id", label: "PT asal", type: "id", required: true, resetLines: true, source: inventoryCompanies },
+      { key: "to_company_id", label: "PT tujuan", type: "id", required: true, source: inventoryCompanies },
+      { key: "transfer_date", label: "Tanggal transfer", type: "date", required: true, initial: workspaceToday }, notesField,
+    ],
+    lines: { limit: 100, fields: [companyItemField, quantity, assetUnits] },
+    groups: [
+      { key: "items", title: "Barang ditransfer", columns: [{ key: "item.sku", label: "SKU" }, { key: "item.name", label: "Barang" }, { key: "quantity", label: "Jumlah", format: "quantity" }] },
+      { key: "events", title: "Riwayat transfer", columns: [{ key: "action", label: "Aktivitas", format: "status" }, { key: "created_at", label: "Waktu", format: "datetime" },
+        { key: "actor.name", label: "Petugas" }, { key: "from_status", label: "Status sebelumnya", format: "status" }, { key: "to_status", label: "Status berikutnya", format: "status" }] },
+    ],
+    operations: row => row.status === "draft" ? [
+      { label: "Kirim transfer", suffix: "send", permission: "inventory.transfer.send" },
+      { label: "Batalkan draft", suffix: "cancel", permission: "inventory.transfer.create" },
+    ] : row.status === "sent" ? [{ label: "Terima transfer", suffix: "receive", permission: "inventory.transfer.receive" }] : [],
+  },
+  assets: {
+    endpoint: "assets", title: "Aset Kantor", description: "Telusuri lokasi, kondisi, dan pemegang aset. Aset dalam perjalanan tetap tercatat di PT asal hingga diterima.",
+    columns: [{ key: "asset_code", label: "Kode aset" }, { key: "item.name", label: "Barang" }, { key: "company.name", label: "PT lokasi" }, status,
+      { key: "holder_name", label: "Pemegang" }, { key: "condition", label: "Kondisi", format: "status" }],
+    details: [{ key: "item.sku", label: "SKU" }, { key: "item.category.name", label: "Kategori produk" }, { key: "serial_number", label: "Serial number" }, { key: "source_type", label: "Dokumen asal" }, { key: "source_id", label: "Referensi dokumen" }],
+    date: "created_at", status: "status", loadDetail: true,
+    groups: [{ key: "events", title: "Riwayat aset", columns: [{ key: "action", label: "Aktivitas", format: "status" }, { key: "created_at", label: "Waktu", format: "datetime" },
+      { key: "from_holder", label: "Pemegang sebelumnya" }, { key: "to_holder", label: "Pemegang berikutnya" },
+      { key: "from_company.name", label: "PT asal" }, { key: "to_company.name", label: "PT tujuan" }, { key: "actor.name", label: "Petugas" }, { key: "reason", label: "Alasan" }] }],
+    operations: row => [
+      ...(row.status === "available" ? [{ label: "Tugaskan aset", suffix: "assign", permission: "assets.manage", assetAction: "assign" as const }] : []),
+      ...(row.status === "in_use" ? [
+        { label: "Kembalikan aset", suffix: "return", permission: "assets.manage", assetAction: "return" as const },
+        { label: "Ganti pemegang", suffix: "reassign", permission: "assets.manage", assetAction: "reassign" as const },
+      ] : []),
+      ...(["available", "damaged"].includes(String(row.status)) ? [{ label: "Periksa kondisi", suffix: "condition", permission: "assets.manage", assetAction: "condition" as const }] : []),
+    ],
   },
 };

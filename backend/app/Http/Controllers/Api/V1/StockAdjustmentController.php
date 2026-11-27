@@ -33,6 +33,7 @@ final class StockAdjustmentController extends Controller
                 reason: $data['reason'],
                 actorId: (int) $request->user()->id,
                 idempotencyKey: $data['idempotency_key'],
+                companyId: (int) $data['company_id'],
             );
         } catch (StockConflictException $exception) {
             return ApiResponse::error($exception->getMessage(), 409);

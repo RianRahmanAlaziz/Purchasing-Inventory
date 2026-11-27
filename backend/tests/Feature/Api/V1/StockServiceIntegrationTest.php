@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Api\V1;
 
 use App\Domain\Category\Models\Category;
+use App\Domain\Company\Models\Company;
 use App\Domain\Employee\Models\Department;
 use App\Domain\Employee\Models\Employee;
 use App\Domain\Inventory\Exceptions\StockConflictException;
@@ -23,12 +24,15 @@ final class StockServiceIntegrationTest extends TestCase
 {
     use DatabaseTransactions;
 
+    private Company $company;
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->assertSame('testing', app()->environment());
         $this->assertSame('mysql', DB::getDefaultConnection());
         $this->assertSame('purchasing_test', DB::selectOne('SELECT DATABASE() AS name')->name);
+        $this->company = Company::query()->create(['name' => 'PT Pengujian Stok dan Batas Akses', 'address' => 'Alamat pengujian']);
     }
 
     private function actor(): User
@@ -72,6 +76,7 @@ final class StockServiceIntegrationTest extends TestCase
         ]);
         $poId = DB::table('purchase_orders')->insertGetId([
             'po_number' => 'PO-STOCK-001',
+            'company_id' => $this->company->id,
             'supplier_id' => $supplier->id,
             'requested_for_employee_id' => $employee->id,
             'requested_for_department_id' => $department->id,
@@ -93,6 +98,7 @@ final class StockServiceIntegrationTest extends TestCase
         ]);
         $grnId = DB::table('goods_receipts')->insertGetId([
             'grn_number' => 'GRN-STOCK-001',
+            'company_id' => $this->company->id,
             'purchase_order_id' => $poId,
             'created_by' => $actor->id,
             'confirmed_by' => $status === 'pending' ? null : $actor->id,
@@ -122,6 +128,7 @@ final class StockServiceIntegrationTest extends TestCase
         ]);
         $distributionId = DB::table('distributions')->insertGetId([
             'distribution_number' => 'DST-STOCK-001',
+            'company_id' => $this->company->id,
             'employee_id' => $employee->id,
             'requested_by' => $actor->id,
             'sent_by' => $status === 'sent' ? $actor->id : null,
@@ -156,7 +163,7 @@ final class StockServiceIntegrationTest extends TestCase
             DB::transaction(function () use ($actor, $item, $stock): void {
                 $stock->adjustTo(
                     $item->id, '0.000', '6.125', 'Koreksi stok fisik',
-                    $actor->id, (string) Str::uuid()
+                    $actor->id, (string) Str::uuid(), (int) $this->company->id
                 );
 
                 throw new RuntimeException('Paksa rollback transaksi');
@@ -242,7 +249,7 @@ final class StockServiceIntegrationTest extends TestCase
         $actor = $this->actor();
         $item = $this->item();
         $stock = app(StockService::class);
-        $stock->adjustTo($item->id, '0.000', '5.000', 'Stok hasil opname', $actor->id, (string) Str::uuid());
+        $stock->adjustTo($item->id, '0.000', '5.000', 'Stok hasil opname', $actor->id, (string) Str::uuid(), (int) $this->company->id);
         $distributionItemId = $this->distributionItem($item, $actor, 'sent');
 
         $first = $stock->issueSentDistributionItem($distributionItemId, $actor->id);

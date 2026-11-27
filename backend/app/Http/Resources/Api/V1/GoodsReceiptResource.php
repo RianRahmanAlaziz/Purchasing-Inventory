@@ -13,6 +13,10 @@ final class GoodsReceiptResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'company_id' => $this->company_id,
+            'company' => $this->whenLoaded('company', fn (): ?array => $this->company === null ? null : [
+                'id' => $this->company->id, 'name' => $this->company->name,
+            ]),
             'grn_number' => $this->grn_number,
             'purchase_order_id' => $this->purchase_order_id,
             'po_number' => $this->whenLoaded('purchaseOrder', fn () => $this->purchaseOrder?->po_number),

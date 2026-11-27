@@ -36,7 +36,7 @@ final class GoodsReceiptController extends Controller
         ]);
 
         $query = GoodsReceipt::query()
-            ->with(['purchaseOrder', 'items.purchaseOrderItem', 'items.movement']);
+            ->with(['company:id,name', 'purchaseOrder', 'items.purchaseOrderItem', 'items.movement']);
         if (isset($filters['purchase_order_id'])) {
             $query->where('purchase_order_id', $filters['purchase_order_id']);
         }
@@ -62,6 +62,7 @@ final class GoodsReceiptController extends Controller
     public function show(Request $request, GoodsReceipt $goodsReceipt): JsonResponse
     {
         return $this->respond($request, $goodsReceipt->load([
+            'company:id,name',
             'purchaseOrder',
             'items.purchaseOrderItem',
             'items.movement',
@@ -120,6 +121,8 @@ final class GoodsReceiptController extends Controller
         string $message = 'Detail GRN berhasil diambil.',
         int $status = 200,
     ): JsonResponse {
+        $receipt->loadMissing('company:id,name');
+
         return ApiResponse::success(
             data: (new GoodsReceiptResource($receipt))->toArray($request),
             message: $message,

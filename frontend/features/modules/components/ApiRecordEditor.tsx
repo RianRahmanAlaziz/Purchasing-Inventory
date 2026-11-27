@@ -42,11 +42,13 @@ function sourcePath(field: Field, values: FormValues, row?: Row) {
 
 type Lookup = { rows: Row[]; error?: string };
 
-function useLookups(fields: Field[], values: FormValues, row?: Row) {
+function useLookups(fields: Field[], values: FormValues, row?: Row, lineValues: FormValues[] = []) {
   const sources: Record<string, boolean> = {};
   for (const field of fields) {
-    const path = sourcePath(field, values, row);
-    if (path) sources[path] = !!field.source?.single;
+    for (const context of [values, ...lineValues.map(line => ({ ...values, ...line }))]) {
+      const path = sourcePath(field, context, row);
+      if (path) sources[path] = !!field.source?.single;
+    }
   }
   const key = JSON.stringify(sources);
   const [result, setResult] = useState<Record<string, Lookup>>({});
@@ -90,19 +92,21 @@ function Input({ field, value, lookup, path, change }: {
   </select></label>;
 
   if (type === "multiple") {
+    const assets = field.key === "asset_ids";
     const selected = Array.isArray(value) ? value : [];
     const available = options.filter(option => !selected.includes(option.value));
     const chosen = selected.map(value => {
       const option = options.find(option => option.value === value);
-      return { value, label: option?.label ?? "Tarif #" + value, unavailable: !!lookup && !lookup.error && !option };
+      return { value, label: option?.label ?? (assets ? "Aset #" : "Tarif #") + value, unavailable: !!lookup && !lookup.error && !option };
     });
     const unavailable = chosen.some(option => option.unavailable);
-    const placeholder = !path ? "Pilih tanggal pemesanan"
-      : !lookup ? "Memuat tarif pajak…"
-      : lookup.error ? "Tarif pajak gagal dimuat"
-      : !options.length ? "Belum ada tarif aktif pada tanggal ini"
-      : !available.length ? "Semua tarif sudah dipilih"
-      : "Pilih tarif pajak";
+    const placeholder = assets
+      ? !path ? "Pilih PT dan barang terlebih dahulu" : !lookup ? "Memuat unit aset..."
+        : lookup.error ? "Unit aset gagal dimuat" : !options.length ? "Tidak ada unit aset tersedia"
+          : !available.length ? "Semua unit aset sudah dipilih" : "Pilih kode aset"
+      : !path ? "Pilih tanggal pemesanan" : !lookup ? "Memuat tarif pajak…"
+        : lookup.error ? "Tarif pajak gagal dimuat" : !options.length ? "Belum ada tarif aktif pada tanggal ini"
+          : !available.length ? "Semua tarif sudah dipilih" : "Pilih tarif pajak";
 
     return <div className="editor-field">
       <label htmlFor={id}>{caption}<span className="editor-optional">Opsional</span></label>
@@ -111,7 +115,7 @@ function Input({ field, value, lookup, path, change }: {
         <option value="" disabled>{placeholder}</option>
         {available.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
-      {chosen.length > 0 && <ul className="editor-tax-list" aria-label="Tarif pajak terpilih">
+      {chosen.length > 0 && <ul className="editor-tax-list" aria-label={assets ? "Unit aset terpilih" : "Tarif pajak terpilih"}>
         {chosen.map(option => <li key={option.value} className={option.unavailable ? "editor-tax-unavailable" : undefined}>
           <span>{option.label}</span>
           <button type="button" aria-label={"Hapus " + option.label} onClick={() => change(selected.filter(value => value !== option.value))}>
@@ -119,7 +123,8 @@ function Input({ field, value, lookup, path, change }: {
           </button>
         </li>)}
       </ul>}
-      {unavailable && <small id={id + "-warning"} className="editor-tax-warning">Hapus tarif yang sudah tidak berlaku untuk tanggal pemesanan ini.</small>}
+      {lookup?.error && <small className="form-error" role="alert">{lookup.error}</small>}
+      {unavailable && <small id={id + "-warning"} className="editor-tax-warning">{assets ? "Unit aset tidak lagi tersedia di PT ini. Hapus lalu pilih ulang." : "Hapus tarif yang sudah tidak berlaku untuk tanggal pemesanan ini."}</small>}
     </div>;
   }
 
@@ -162,7 +167,22 @@ export function ApiRecordEditor({ config, row, close, saved }: Props) {
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const lookups = useLookups([...fields, ...lineFields], values, row);
+  const lookups = useLookups([...fields, ...lineFields], values, row, lines.map(line => line.values));
+
+  async function updateField(field: Field, value: FormValue) {
+    const poChanged = config.endpoint === "goods-receipts" && field.key === "purchase_order_id";
+    setValues(current => ({ ...current, [field.key]: value, ...(poChanged ? { company_id: "" } : {}) }));
+    if (field.resetLines) setLines([{ key: "first", values: initialValues(lineFields) }]);
+    if (poChanged && value) {
+      try {
+        const { data: po } = await api<Row>("purchase-orders/" + value);
+        setValues(current => current.purchase_order_id === value && !current.company_id
+          ? { ...current, company_id: po.company_id == null ? "" : String(po.company_id) } : current);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "PT pada PO gagal dimuat. Pilih PT tujuan penerimaan.");
+      }
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -186,8 +206,8 @@ export function ApiRecordEditor({ config, row, close, saved }: Props) {
     }
   }
 
-  function render(field: Field, value: FormValue, change: (value: FormValue) => void) {
-    const path = sourcePath(field, values, row);
+  function render(field: Field, value: FormValue, change: (value: FormValue) => void, context = values) {
+    const path = sourcePath(field, context, row);
     return <Input key={field.key} field={field} value={value} path={path} lookup={path ? lookups[path] : undefined} change={change}/>;
   }
 
@@ -196,10 +216,9 @@ export function ApiRecordEditor({ config, row, close, saved }: Props) {
     className="order-editor-modal api-record-editor" onClose={() => { if (!busy) close(); }}>
     <form className="order-form" onSubmit={event => void submit(event)}>
       <div className="po-form-body">
-        <div className="form-row editor-fields">{fields.map(field => render(field, values[field.key], value => {
-          setValues(current => ({ ...current, [field.key]: value }));
-          if (field.resetLines) setLines([{ key: "first", values: initialValues(lineFields) }]);
-        }))}</div>
+        <div className="form-row editor-fields">{fields.map(field => render(field, values[field.key], value => void updateField(field, value)))}</div>
+        {config.endpoint === "goods-receipts" && <p className="form-hint">Tujuan penerimaan mengikuti PT penerbit PO. Pilih PT lain jika lokasi penerimaan berbeda.</p>}
+        {["distributions", "inventory-transfers"].includes(config.endpoint) && <p className="form-hint">Untuk Aset Kantor, pilih setiap kode aset yang diserahkan. Jumlah unit harus utuh dan sesuai pilihan aset.</p>}
         {config.lines && <>
           <div className="line-editor-heading"><h3>Rincian barang</h3><Button type="button" variant="secondary" disabled={busy || lines.length >= config.lines.limit}
             onClick={() => setLines(current => [...current, { key: crypto.randomUUID(), values: initialValues(lineFields) }])}><Icon name="plus" size={16}/> Tambah barang</Button></div>
@@ -207,8 +226,11 @@ export function ApiRecordEditor({ config, row, close, saved }: Props) {
             <legend>Barang {index + 1}</legend>
             <div className="form-row">{lineFields.map(field => render(field, line.values[field.key], value => {
               setLines(current => current.map(entry => entry.key === line.key
-                ? { ...entry, values: { ...entry.values, [field.key]: value } } : entry));
-            }))}</div>
+                ? { ...entry, values: { ...entry.values, [field.key]: value,
+                  ...(field.key === "item_id" ? { asset_ids: [] } : {}),
+                  ...(field.key === "asset_ids" && Array.isArray(value) ? { quantity: value.length ? String(value.length) : "" } : {}),
+                } } : entry));
+            }, { ...values, ...line.values }))}</div>
             {lines.length > 1 && <button type="button" className="remove-line" disabled={busy} onClick={() => setLines(current => current.filter(entry => entry.key !== line.key))}>Hapus barang {index + 1}</button>}
           </fieldset>)}</div>
         </>}

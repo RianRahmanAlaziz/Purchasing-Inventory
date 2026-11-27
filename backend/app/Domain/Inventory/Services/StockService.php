@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Inventory\Services;
 
+use App\Domain\Asset\Actions\AssetWorkflow;
 use App\Domain\Inventory\Exceptions\StockConflictException;
 use App\Domain\Inventory\Models\StockAdjustment;
 use App\Domain\Inventory\Models\StockMovement;
@@ -18,6 +19,8 @@ use Illuminate\Support\Facades\DB;
  */
 final class StockService
 {
+    public function __construct(private readonly InventoryLedger $ledger) {}
+
     /**
      * Set saldo hasil stock opname; expectedBalance melindungi dari data usang.
      * Idempotency key berlaku global untuk semua adjustment.
@@ -29,6 +32,7 @@ final class StockService
         string $reason,
         int $actorId,
         string $idempotencyKey,
+        ?int $companyId = null,
     ): StockAdjustment {
         $expected = StockDecimal::parse($expectedBalance);
         $target = StockDecimal::parse($targetBalance);
@@ -40,14 +44,14 @@ final class StockService
         }
 
         $fingerprint = hash('sha256', json_encode(
-            [$actorId, $itemId, $expected, $target, $reason],
+            [$actorId, $itemId, $expected, $target, $reason, $companyId],
             JSON_THROW_ON_ERROR,
         ));
 
         try {
             return DB::transaction(function () use (
                 $itemId, $expected, $target, $reason, $actorId,
-                $idempotencyKey, $fingerprint,
+                $idempotencyKey, $fingerprint, $companyId,
             ): StockAdjustment {
                 // Cek replay di awal, tetapi tetap andalkan UNIQUE DB untuk race.
                 $prior = StockAdjustment::query()
@@ -73,7 +77,7 @@ final class StockService
                     throw new StockConflictException('Barang dari PO menunggu konfirmasi penerimaan pertama.');
                 }
 
-                $before = StockDecimal::parse((string) $item->stock_quantity);
+                $before = $this->ledger->balance($item, $companyId);
 
                 if ($before !== $expected) {
                     throw new StockConflictException(
@@ -86,9 +90,13 @@ final class StockService
                 }
 
                 $difference = $target - $before;
+                if ($item->item_type === 'office_asset' && ($companyId === null || $target % 1000 !== 0 || $difference < 0)) {
+                    throw new StockConflictException('Aset memerlukan PT dan unit utuh. Gunakan kondisi/retur aset untuk pengurangan agar identitas tetap terlacak.');
+                }
 
                 $adjustment = StockAdjustment::query()->create([
                     'item_id' => $itemId,
+                    'company_id' => $companyId,
                     'adjusted_by' => $actorId,
                     'stock_before' => StockDecimal::format($before),
                     'stock_after' => StockDecimal::format($target),
@@ -106,7 +114,11 @@ final class StockService
                     'adjustment',
                     ['stock_adjustment_id' => $adjustment->id],
                     $reason,
+                    companyId: $companyId,
                 );
+                if ($item->item_type === 'office_asset') {
+                    app(AssetWorkflow::class)->registerUnits($item, $companyId, intdiv($difference, 1000), $actorId, ['source_type' => 'stock_adjustment', 'source_id' => $adjustment->id]);
+                }
 
                 return $adjustment->load('movement');
             }, attempts: 3);
@@ -174,17 +186,29 @@ final class StockService
                 throw new StockConflictException('Kuantitas GRN tidak valid.');
             }
 
+            if ($item->item_type === 'office_asset' && ($received % 1000 !== 0 || $damaged % 1000 !== 0)) {
+                throw new StockConflictException('Jumlah aset diterima/rusak harus unit utuh.');
+            }
             $net = $received - $damaged;
             if ($net === 0) {
                 return null;
             }
 
-            return $this->writeMovement(
+            if ($grn->company_id === null) {
+                throw new StockConflictException('Pilih PT tujuan penerimaan sebelum konfirmasi GRN.');
+            }
+            $movement = $this->writeMovement(
                 $item, $net, $actorId, 'grn_in',
                 ['goods_receipt_item_id' => $grnItemId],
                 'Konfirmasi GRN #'.$grn->grn_number,
                 (string) $poItem->unit_price,
+                companyId: (int) $grn->company_id,
             );
+            if ($item->item_type === 'office_asset') {
+                app(AssetWorkflow::class)->registerUnits($item, (int) $grn->company_id, intdiv($net, 1000), $actorId, ['source_type' => 'goods_receipt_item', 'source_id' => $grnItemId]);
+            }
+
+            return $movement;
         }, attempts: 3);
     }
 
@@ -225,10 +249,21 @@ final class StockService
                 throw new StockConflictException('Kuantitas distribusi harus lebih dari nol.');
             }
 
+            if ($distribution->company_id === null) {
+                throw new StockConflictException('Pilih PT asal distribusi.');
+            }
+            if ($item->item_type === 'office_asset') {
+                app(AssetWorkflow::class)->issueDistribution(
+                    $item, (int) $distribution->company_id, json_decode($source->asset_ids ?? '[]', true),
+                    (string) ($distribution->recipient_name_snapshot ?? ''), $actorId, $distributionItemId,
+                );
+            }
+
             return $this->writeMovement(
                 $item, -$qty, $actorId, 'distribution_out',
                 ['distribution_item_id' => $distributionItemId],
                 'Pengiriman distribusi #'.$distribution->distribution_number,
+                companyId: (int) $distribution->company_id,
             );
         }, attempts: 3);
     }
@@ -251,37 +286,20 @@ final class StockService
         array $sourceColumns,
         ?string $reason = null,
         ?string $lastPurchasePrice = null,
+        ?int $companyId = null,
     ): StockMovement {
-        $before = StockDecimal::parse((string) $item->stock_quantity);
-        $after = StockDecimal::add($before, $difference);
-
-        if ($difference === 0) {
-            throw new StockConflictException('Mutasi dengan selisih nol tidak diperbolehkan.');
-        }
-
-        $updates = [
-            'stock_quantity' => StockDecimal::format($after),
-            'updated_at' => now(),
-        ];
-
+        $movement = $this->ledger->change($item, $companyId, $difference, $actorId, $type, $sourceColumns, $reason);
+        $updates = [];
         if ($lastPurchasePrice !== null) {
             $updates['last_purchase_price'] = $lastPurchasePrice;
         }
         if ($type === 'grn_in') {
             $updates['awaiting_first_receipt'] = false;
         }
+        if ($updates !== []) {
+            DB::table('items')->where('id', $item->id)->update($updates);
+        }
 
-        DB::table('items')->where('id', $item->id)->update($updates);
-
-        return StockMovement::query()->create(array_merge([
-            'item_id' => $item->id,
-            'created_by' => $actorId,
-            'movement_type' => $type,
-            'quantity_change' => StockDecimal::format($difference),
-            'balance_before' => StockDecimal::format($before),
-            'balance_after' => StockDecimal::format($after),
-            'reason' => $reason,
-            'created_at' => now(),
-        ], $sourceColumns));
+        return $movement;
     }
 }

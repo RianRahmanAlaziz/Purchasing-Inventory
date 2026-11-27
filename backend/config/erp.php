@@ -28,6 +28,8 @@ return [
                 'items.create',
                 'inventory.view',
                 'inventory.adjust',
+                'inventory.transfer.view', 'inventory.transfer.create', 'inventory.transfer.send', 'inventory.transfer.receive',
+                'inventory.reconcile', 'assets.view', 'assets.manage',
                 'grn.view',
                 'grn.create',
             ],

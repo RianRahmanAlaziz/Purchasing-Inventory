@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Api\V1;
 
 use App\Domain\Category\Models\Category;
+use App\Domain\Company\Models\Company;
 use App\Domain\Distribution\Actions\DistributionWorkflow;
 use App\Domain\Distribution\Models\Distribution;
 use App\Domain\Distribution\Models\DistributionItem;
@@ -27,6 +28,8 @@ final class DistributionApiTest extends TestCase
 {
     use DatabaseTransactions;
 
+    private Company $company;
+
     private Employee $employee;
 
     private User $employeeUser;
@@ -47,6 +50,7 @@ final class DistributionApiTest extends TestCase
         $this->assertSame('testing', app()->environment());
         $this->assertSame('mysql', DB::getDefaultConnection());
         $this->assertSame('purchasing_test', DB::selectOne('SELECT DATABASE() AS name')->name);
+        $this->company = Company::query()->create(['name' => 'PT Pengujian DistributionApiTest', 'address' => 'Alamat pengujian']);
 
         foreach ([
             'distribution.view', 'distribution.create', 'distribution.approve',
@@ -102,6 +106,7 @@ final class DistributionApiTest extends TestCase
     private function payload(?Employee $employee = null): array
     {
         return [
+            'company_id' => $this->company->id,
             'employee_id' => ($employee ?? $this->employee)->id,
             'purpose' => 'Perlengkapan kerja kantor',
             'items' => [
@@ -115,6 +120,7 @@ final class DistributionApiTest extends TestCase
         // Dokumen lama tetap dapat diproses tanpa mengubah riwayat persetujuannya.
         $distribution = Distribution::query()->create([
             'distribution_number' => 'DIST-LEGACY-'.Str::ulid(),
+            'company_id' => $this->company->id,
             'employee_id' => $this->employee->id,
             'recipient_name_snapshot' => $this->employee->name,
             'requested_by' => $this->staff->id,
@@ -141,7 +147,7 @@ final class DistributionApiTest extends TestCase
         app(StockService::class)->adjustTo(
             (int) $item->id, (string) $item->fresh()->stock_quantity,
             $qty, 'Stok awal untuk pengujian distribusi',
-            (int) $this->staff->id, (string) Str::uuid()
+            (int) $this->staff->id, (string) Str::uuid(), (int) $this->company->id
         );
     }
 

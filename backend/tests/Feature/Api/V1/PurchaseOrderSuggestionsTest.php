@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Api\V1;
 
 use App\Domain\Category\Models\Category;
+use App\Domain\Company\Models\Company;
 use App\Domain\Employee\Models\Department;
 use App\Domain\Employee\Models\Employee;
 use App\Domain\Item\Models\Item;
@@ -24,6 +25,8 @@ final class PurchaseOrderSuggestionsTest extends TestCase
 {
     use DatabaseTransactions;
 
+    private Company $company;
+
     private User $actor;
 
     private Supplier $supplier;
@@ -41,6 +44,7 @@ final class PurchaseOrderSuggestionsTest extends TestCase
         parent::setUp();
         $this->assertSame('testing', app()->environment());
         $this->assertSame('purchasing_test', DB::selectOne('SELECT DATABASE() AS name')->name);
+        $this->company = Company::query()->create(['name' => 'PT Pengujian Order', 'address' => 'Alamat pengujian']);
         $this->signIn(['po.view', 'po.create', 'po.update', 'suppliers.view', 'suppliers.create', 'items.view', 'items.manage']);
         $this->supplier = Supplier::query()->create(['code' => 'SUGGEST', 'name' => 'PT Supplier Baru',
             'normalized_name' => 'pt supplier baru', 'address' => 'Alamat master', 'is_active' => true]);
@@ -67,7 +71,7 @@ final class PurchaseOrderSuggestionsTest extends TestCase
 
     private function payload(): array
     {
-        return ['supplier_id' => $this->supplier->id, 'requested_for_employee_id' => $this->employee->id,
+        return ['company_id' => $this->company->id, 'supplier_id' => $this->supplier->id, 'requested_for_employee_id' => $this->employee->id,
             'requested_for_department_id' => $this->department->id, 'order_date' => '2026-11-05',
             'items' => [['item_id' => $this->item->id, 'quantity' => '1.000', 'unit_price' => '7500.00']]];
     }

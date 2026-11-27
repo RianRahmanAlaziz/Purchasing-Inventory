@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Purchasing\Actions;
 
 use App\Domain\Company\Models\Company;
+use App\Domain\Inventory\Support\StockDecimal;
 use App\Domain\Purchasing\Exceptions\PurchaseOrderConflict;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Domain\Purchasing\Support\PoMoney;
@@ -138,6 +139,9 @@ final class SaveDraftPurchaseOrder
             }
 
             $quantity = (string) $entry['quantity'];
+            if ($item->item_type === 'office_asset' && StockDecimal::parse($quantity) % 1000 !== 0) {
+                throw ValidationException::withMessages(['items' => ['Jumlah aset kantor harus unit utuh.']]);
+            }
             $unitPrice = (string) $entry['unit_price'];
             if (isset($entry['unit']) && $entry['unit'] !== $item->unit) {
                 throw ValidationException::withMessages(['items' => ['Satuan harus sesuai master barang. Pilih barang dengan satuan yang benar.']]);

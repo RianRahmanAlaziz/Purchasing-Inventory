@@ -48,6 +48,7 @@ final class StoreItemRequest extends FormRequest
                 Rule::unique('items', 'sku'),
             ],
             'name' => ['required', 'string', 'max:200'],
+            'item_type' => ['sometimes', 'required', 'in:consumable,office_asset'],
             'unit' => [
                 'required', 'string', 'max:30',
                 'regex:/^[a-z][a-z0-9.\/_-]*$/',

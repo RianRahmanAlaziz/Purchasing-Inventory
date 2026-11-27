@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\ApplicationController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\CompanyController;
+use App\Http\Controllers\Api\V1\CompanyInventoryController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DepartmentController;
 use App\Http\Controllers\Api\V1\DistributionController;
@@ -53,6 +54,11 @@ Route::prefix('auth')->group(function (): void {
 Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function (): void {
     Route::get('/erp/apps', ApplicationController::class)->name('erp.apps.index');
     $masterAccess = RoleMiddleware::using('super_admin');
+    require __DIR__.'/inventory.php';
+    Route::get('/inventory/companies', [CompanyInventoryController::class, 'companies'])
+        ->middleware(PermissionMiddleware::using('inventory.view|items.view|inventory.adjust|inventory.reconcile|grn.create|grn.view|distribution.create|inventory.transfer.view|inventory.transfer.create|inventory.transfer.send|inventory.transfer.receive|assets.view|assets.manage'));
+    Route::get('/inventory/overview', [CompanyInventoryController::class, 'overview'])->middleware('can:inventory.view');
+    Route::post('/inventory/reconcile', [CompanyInventoryController::class, 'reconcile'])->middleware('can:inventory.reconcile');
 
     Route::prefix('notifications')->name('notifications.')->group(function (): void {
         Route::get('/', [NotificationController::class, 'index'])->name('index');
@@ -107,8 +113,8 @@ Route::middleware(['auth:sanctum', EnsureActiveAccount::class])->group(function 
         Route::delete('/{document}', [DocumentController::class, 'destroy'])->whereNumber('document')->middleware('can:documents.manage')->name('destroy');
         Route::get('/{document}/download', [DocumentController::class, 'download'])->whereNumber('document')->middleware('can:documents.view')->name('download');
         foreach (['send', 'receive', 'verify'] as $action) {
-            Route::post('/{document}/' . $action, [DocumentController::class, 'transition'])->whereNumber('document')->defaults('action', $action)
-                ->middleware('can:documents.' . $action)->name($action);
+            Route::post('/{document}/'.$action, [DocumentController::class, 'transition'])->whereNumber('document')->defaults('action', $action)
+                ->middleware('can:documents.'.$action)->name($action);
         }
     });
 

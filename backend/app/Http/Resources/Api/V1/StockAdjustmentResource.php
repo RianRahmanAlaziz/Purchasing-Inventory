@@ -14,6 +14,7 @@ final class StockAdjustmentResource extends JsonResource
         return [
             'id' => $this->id,
             'item_id' => $this->item_id,
+            'company_id' => $this->company_id,
             'adjusted_by' => $this->adjusted_by,
             'stock_before' => $this->stock_before,
             'stock_after' => $this->stock_after,

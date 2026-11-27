@@ -46,6 +46,9 @@ final class StoreDistributionRequest extends FormRequest
                 'required_without:recipient_name', 'nullable', 'integer', Rule::exists('employees', 'id')->where('is_active', true),
             ],
             'recipient_name' => ['required_without:employee_id', 'nullable', 'string', 'max:200', 'prohibits:employee_id'],
+            'company_id' => ['required', 'integer', 'exists:companies,id,deleted_at,NULL'],
+            'items.*.asset_ids' => ['sometimes', 'array'],
+            'items.*.asset_ids.*' => ['integer', 'distinct', 'exists:office_assets,id'],
             'purpose' => ['required', 'string', 'min:5', 'max:5000'],
             'items' => ['required', 'array', 'min:1', 'max:50'],
             'items.*.item_id' => [

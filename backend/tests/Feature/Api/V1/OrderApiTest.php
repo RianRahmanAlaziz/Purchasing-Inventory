@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Api\V1;
 
 use App\Domain\Category\Models\Category;
+use App\Domain\Company\Models\Company;
 use App\Domain\Employee\Models\Department;
 use App\Domain\Employee\Models\Employee;
 use App\Domain\Inventory\Services\StockService;
@@ -29,6 +30,8 @@ final class OrderApiTest extends TestCase
 {
     use DatabaseTransactions;
 
+    private Company $company;
+
     private Department $department;
 
     private Employee $employee;
@@ -50,6 +53,7 @@ final class OrderApiTest extends TestCase
         parent::setUp();
         $this->assertSame('testing', app()->environment());
         $this->assertSame('purchasing_test', DB::selectOne('SELECT DATABASE() AS name')->name);
+        $this->company = Company::query()->create(['name' => 'PT Pengujian Order', 'address' => 'Alamat pengujian']);
 
         foreach (['orders.view', 'po.approve.hr', 'po.approve.gm', 'reports.view'] as $name) {
             Permission::findOrCreate($name, 'web');
@@ -98,6 +102,7 @@ final class OrderApiTest extends TestCase
     private function approvedOrder(?int $supplierId = null, string $unitPrice = '50000.00', ?User $gm = null): Order
     {
         $po = app(SaveDraftPurchaseOrder::class)->create([
+            'company_id' => $this->company->id,
             'supplier_id' => $supplierId ?? $this->supplier->id,
             'requested_for_employee_id' => $this->employee->id,
             'requested_for_department_id' => $this->department->id,
@@ -145,6 +150,7 @@ final class OrderApiTest extends TestCase
 
         $grnId = DB::table('goods_receipts')->insertGetId([
             'grn_number' => 'GRN-ORDER-'.(++$this->receiptIndex),
+            'company_id' => $this->company->id,
             'purchase_order_id' => $order->purchase_order_id,
             'created_by' => $this->maker->id,
             'confirmed_by' => $confirmed ? $this->hr->id : null,

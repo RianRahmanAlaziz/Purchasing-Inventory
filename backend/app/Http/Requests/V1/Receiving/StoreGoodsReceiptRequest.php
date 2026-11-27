@@ -50,6 +50,7 @@ final class StoreGoodsReceiptRequest extends FormRequest
     {
         return [
             'purchase_order_id' => ['required', 'integer', Rule::exists('purchase_orders', 'id')],
+            'company_id' => ['sometimes', 'required', 'integer', 'exists:companies,id,deleted_at,NULL'],
             'received_date' => ['required', 'date_format:Y-m-d'],
             'notes' => ['sometimes', 'nullable', 'string', 'max:5000'],
             'status' => ['prohibited'],

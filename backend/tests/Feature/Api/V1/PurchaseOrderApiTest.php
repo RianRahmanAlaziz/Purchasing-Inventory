@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Api\V1;
 
 use App\Domain\Category\Models\Category;
+use App\Domain\Company\Models\Company;
 use App\Domain\Employee\Models\Department;
 use App\Domain\Employee\Models\Employee;
 use App\Domain\Finance\Models\Invoice;
@@ -33,6 +34,8 @@ final class PurchaseOrderApiTest extends TestCase
 {
     use DatabaseTransactions;
 
+    private Company $company;
+
     private Supplier $supplier;
 
     private Department $department;
@@ -48,6 +51,7 @@ final class PurchaseOrderApiTest extends TestCase
         parent::setUp();
         $this->assertSame('testing', app()->environment());
         $this->assertSame('purchasing_test', DB::selectOne('SELECT DATABASE() AS name')->name);
+        $this->company = Company::query()->create(['name' => 'PT Pengujian PO', 'address' => 'Alamat pengujian']);
 
         foreach ([
             'po.view', 'po.create', 'po.update', 'po.submit', 'po.send', 'po.supplier-confirm',
@@ -96,6 +100,7 @@ final class PurchaseOrderApiTest extends TestCase
     private function payload(string $price = '1000000.00'): array
     {
         return [
+            'company_id' => $this->company->id,
             'supplier_id' => $this->supplier->id,
             'requested_for_employee_id' => $this->employee->id,
             'requested_for_department_id' => $this->department->id,
@@ -136,6 +141,18 @@ final class PurchaseOrderApiTest extends TestCase
     {
         $this->signIn($this->actor(['po.view']));
         $this->postJson('/api/v1/purchase-orders', $this->payload())->assertForbidden();
+    }
+
+    public function test_new_po_requires_an_existing_issuer_company(): void
+    {
+        $this->signIn($this->actor(['po.create']));
+        $payload = $this->payload();
+        unset($payload['company_id']);
+        $this->postJson('/api/v1/purchase-orders', $payload)->assertUnprocessable()
+            ->assertJsonValidationErrors('company_id');
+        $this->postJson('/api/v1/purchase-orders', $payload + ['company_id' => 999999999])
+            ->assertUnprocessable()->assertJsonValidationErrors('company_id');
+        $this->assertSame(0, PurchaseOrder::query()->count());
     }
 
     public function test_staff_hr_uploads_documentation_on_approved_po_and_order_shows_its_upload_status(): void

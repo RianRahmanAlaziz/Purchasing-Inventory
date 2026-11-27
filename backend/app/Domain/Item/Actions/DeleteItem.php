@@ -28,11 +28,15 @@ final class DeleteItem
                     'distribution_items',
                     'stock_adjustments',
                     'stock_movements',
+                    'inventory_transfer_items',
+                    'office_assets',
                 ] as $table) {
                     if (DB::table($table)->where('item_id', $locked->getKey())->exists()) {
                         return false;
                     }
                 }
+
+                DB::table('inventory_balances')->where('item_id', $locked->id)->where('quantity', 0)->delete();
 
                 return (bool) $locked->delete();
             }, attempts: 3);

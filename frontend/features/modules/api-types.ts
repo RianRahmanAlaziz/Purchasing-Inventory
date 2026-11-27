@@ -44,6 +44,9 @@ export type Operation = {
   method?: "POST" | "DELETE";
   reason?: boolean;
   adjustment?: boolean;
+  assetAction?: "assign" | "return" | "reassign" | "condition";
+  reconcile?: boolean;
+  location?: boolean;
 };
 
 export type ApiModule = {

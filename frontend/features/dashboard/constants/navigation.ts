@@ -18,6 +18,8 @@ export const navigation: { title: string; items: NavigationItem[]; masterData?: 
   { title: "INVENTORY", items: [
     { slug: "items", name: "Stok Barang", icon: "stock", permission: "items.view", alsoRequires: ["inventory.view"] },
     { slug: "stock-movements", name: "Mutasi Stok", icon: "arrows", permission: "inventory.view" },
+    { slug: "inventory-transfers", name: "Transfer Antar-PT", icon: "arrows", permission: "inventory.transfer.view" },
+    { slug: "assets", name: "Aset Kantor", icon: "stock", permission: "assets.view" },
     { slug: "distributions", name: "Distribusi Barang", icon: "truck", permission: "distribution.view" },
   ] },
   { title: "MASTER DATA", masterData: true, items: [

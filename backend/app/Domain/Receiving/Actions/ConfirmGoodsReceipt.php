@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Receiving\Actions;
 
+use App\Domain\Company\Models\Company;
 use App\Domain\Inventory\Services\StockService;
 use App\Domain\Inventory\Support\StockDecimal;
 use App\Domain\Purchasing\Models\Order;
@@ -56,6 +57,9 @@ final class ConfirmGoodsReceipt
             }
             if ($grn->status !== 'pending') {
                 throw new GoodsReceiptConflict('Hanya GRN Pending yang dapat dikonfirmasi.');
+            }
+            if ($grn->company_id === null || Company::query()->whereKey($grn->company_id)->sharedLock()->first() === null) {
+                throw new GoodsReceiptConflict('Pilih PT tujuan penerimaan yang tersedia sebelum konfirmasi.');
             }
 
             $lines = $grn->items()->orderBy('purchase_order_item_id')->get();

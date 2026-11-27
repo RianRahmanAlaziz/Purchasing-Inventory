@@ -17,7 +17,11 @@ final class ItemResource extends JsonResource
             'name' => $this->name,
             'unit' => $this->unit,
             // DECIMAL dikirim sebagai string, menjaga presisi angka.
-            'stock_quantity' => $this->stock_quantity,
+            'stock_quantity' => $this->company_stock_quantity ?? $this->stock_quantity,
+            'total_stock_quantity' => $this->stock_quantity,
+            'item_type' => $this->item_type,
+            'unallocated_quantity' => $this->whenLoaded('balances', fn () => (string) ($this->balances->firstWhere('company_id', null)?->quantity ?? '0.000')),
+            'company_balances' => $this->whenLoaded('balances', fn () => $this->balances->map(fn ($b) => ['company_id' => $b->company_id, 'company_name' => $b->company?->name, 'quantity' => $b->quantity])->values()->all()),
             'minimum_stock' => $this->minimum_stock,
             'maximum_stock' => $this->maximum_stock,
             'reference_price' => $this->reference_price,

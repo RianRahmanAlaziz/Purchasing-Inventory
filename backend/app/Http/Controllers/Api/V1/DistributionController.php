@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Domain\Distribution\Actions\DistributionWorkflow;
 use App\Domain\Distribution\Actions\RequestDistribution;
+use App\Domain\Distribution\Actions\SelectDistributionCompany;
 use App\Domain\Distribution\Enums\DistributionStatus;
 use App\Domain\Distribution\Exceptions\DistributionConflict;
 use App\Domain\Distribution\Models\Distribution;
@@ -41,6 +42,7 @@ final class DistributionController extends Controller
         ]);
 
         $query = Distribution::query()->with([
+            'company:id,name',
             'employee',
             'items.item',
             'items.movement',
@@ -103,6 +105,7 @@ final class DistributionController extends Controller
         $this->ensureCanView($request, $distribution);
 
         return $this->respond($request, $distribution->load([
+            'company:id,name',
             'employee.department:id,name',
             'sender:id,name',
             'items.item',
@@ -117,6 +120,13 @@ final class DistributionController extends Controller
             $request->validated(),
             $request->user()
         ), 'Distribusi dibuat dan siap diserahkan.', 201);
+    }
+
+    public function location(Request $request, Distribution $distribution, SelectDistributionCompany $action): JsonResponse
+    {
+        $data = $request->validate(['company_id' => ['required', 'integer', 'exists:companies,id,deleted_at,NULL']]);
+
+        return $this->perform($request, fn () => $action->execute($distribution, (int) $data['company_id'], $request->user()), 'PT asal distribusi ditetapkan.');
     }
 
     public function approve(Request $request, Distribution $distribution, DistributionWorkflow $action): JsonResponse
@@ -202,6 +212,8 @@ final class DistributionController extends Controller
 
     private function resource(Distribution $distribution, Request $request): array
     {
+        $distribution->loadMissing('company:id,name');
+
         return (new DistributionResource($distribution))->toArray($request);
     }
 }

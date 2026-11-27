@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Domain\Company\Actions\DeleteCompany;
 use App\Domain\Company\Models\Company;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Company\SaveCompanyRequest;
 use App\Http\Resources\Api\V1\CompanyResource;
-use App\Models\User;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -55,13 +55,11 @@ final class CompanyController extends Controller
         return ApiResponse::success(['default_company_id' => $company->id], 'PT aktif diperbarui.');
     }
 
-    public function destroy(Company $company): JsonResponse
+    public function destroy(Company $company, DeleteCompany $action): JsonResponse
     {
-        DB::transaction(function () use ($company): void {
-            $locked = Company::query()->lockForUpdate()->findOrFail($company->id);
-            User::query()->where('default_company_id', $locked->id)->update(['default_company_id' => null]);
-            $locked->delete();
-        }, attempts: 3);
+        if (! $action->execute($company)) {
+            return ApiResponse::error('PT masih memiliki stok, aset, atau transfer dalam perjalanan dan tidak dapat dihapus.', 409);
+        }
 
         return ApiResponse::success(null, 'Profil PT dihapus. Identitas pada PO lama tetap tersimpan.');
     }

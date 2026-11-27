@@ -18,14 +18,24 @@ final class StockMovementController extends Controller
     {
         $filters = $request->validate([
             'item_id' => ['sometimes', 'integer', Rule::exists('items', 'id')],
+            'company_id' => ['sometimes', 'integer', Rule::exists('companies', 'id')],
             'movement_type' => ['sometimes', Rule::in([
                 'adjustment', 'grn_in', 'distribution_out',
+                'transfer_out', 'transfer_in', 'asset_assign', 'asset_return', 'asset_condition',
+                'allocation_out', 'allocation_in',
             ])],
             'per_page' => ['sometimes', 'integer', 'between:1,100'],
             'page' => ['sometimes', 'integer', 'min:1'],
         ]);
 
-        $query = StockMovement::query()->with('item:id,sku,name,unit');
+        $query = StockMovement::query()->with([
+            'item:id,sku,name,unit', 'company:id,name', 'fromCompany:id,name', 'toCompany:id,name',
+            'actor:id,name', 'transferItem.transfer:id,transfer_number',
+        ]);
+
+        if (isset($filters['company_id'])) {
+            $query->where('company_id', $filters['company_id']);
+        }
 
         if (isset($filters['item_id'])) {
             $query->where('item_id', $filters['item_id']);

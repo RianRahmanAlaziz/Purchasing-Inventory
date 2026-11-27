@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Api\V1;
 
 use App\Domain\Category\Models\Category;
+use App\Domain\Company\Models\Company;
 use App\Domain\Employee\Models\Department;
 use App\Domain\Employee\Models\Employee;
 use App\Domain\Item\Models\Item;
@@ -27,6 +28,8 @@ use Tests\TestCase;
 final class BusinessLifecycleIntegrationTest extends TestCase
 {
     use DatabaseTransactions;
+
+    private Company $company;
 
     private Supplier $supplier;
 
@@ -55,6 +58,7 @@ final class BusinessLifecycleIntegrationTest extends TestCase
         $this->assertSame('testing', app()->environment());
         $this->assertSame('mysql', DB::getDefaultConnection());
         $this->assertSame('purchasing_test', DB::selectOne('SELECT DATABASE() AS name')->name);
+        $this->company = Company::query()->create(['name' => 'PT Pengujian BusinessLifecycleIntegrationTest', 'address' => 'Alamat pengujian']);
 
         foreach ([
             'po.view', 'po.create', 'po.submit', 'po.send', 'po.supplier-confirm',
@@ -121,6 +125,7 @@ final class BusinessLifecycleIntegrationTest extends TestCase
     private function poPayload(string $unitPrice = '100000.00', string $qty = '10.000'): array
     {
         return [
+            'company_id' => $this->company->id,
             'supplier_id' => $this->supplier->id,
             'requested_for_employee_id' => $this->employee->id,
             'requested_for_department_id' => $this->department->id,
@@ -199,6 +204,7 @@ final class BusinessLifecycleIntegrationTest extends TestCase
         $this->signIn($this->warehouse);
 
         return (int) $this->postJson('/api/v1/distributions', [
+            'company_id' => $this->company->id,
             'recipient_name' => 'Penerima operasional tanpa akun',
             'purpose' => 'Pemakaian perlengkapan kerja hasil pengadaan',
             'items' => [[
@@ -246,10 +252,10 @@ final class BusinessLifecycleIntegrationTest extends TestCase
             ->assertJsonPath('data.sections.inventory.active_items', 1)
             ->assertJsonPath('data.sections.inventory.low_stock_items', 1);
         $this->postJson("/api/v1/items/{$itemId}/stock-adjustments", [
-            'expected_quantity' => '0', 'target_quantity' => '10', 'reason' => 'Belum ada penerimaan barang',
+            'company_id' => $this->company->id, 'expected_quantity' => '0', 'target_quantity' => '10', 'reason' => 'Belum ada penerimaan barang',
         ], ['Idempotency-Key' => (string) Str::uuid()])->assertConflict();
         $this->postJson('/api/v1/distributions', [
-            'employee_id' => $this->employee->id, 'purpose' => 'Permintaan perlengkapan kerja',
+            'company_id' => $this->company->id, 'employee_id' => $this->employee->id, 'purpose' => 'Permintaan perlengkapan kerja',
             'items' => [['item_id' => $itemId, 'quantity' => '1.000']],
         ])->assertConflict();
 
@@ -268,7 +274,7 @@ final class BusinessLifecycleIntegrationTest extends TestCase
             ->assertJsonPath('data.0.id', $itemId)->assertJsonPath('data.0.stock_quantity', '5.000');
 
         $this->postJson("/api/v1/items/{$itemId}/stock-adjustments", [
-            'expected_quantity' => '5', 'target_quantity' => '0', 'reason' => 'Hasil pemeriksaan stok fisik',
+            'company_id' => $this->company->id, 'expected_quantity' => '5', 'target_quantity' => '0', 'reason' => 'Hasil pemeriksaan stok fisik',
         ], ['Idempotency-Key' => (string) Str::uuid()])->assertCreated();
         $this->getJson("/api/v1/items/{$itemId}")->assertOk()->assertJsonPath('data.stock_quantity', '0.000');
     }
@@ -397,7 +403,7 @@ final class BusinessLifecycleIntegrationTest extends TestCase
         $url = "/api/v1/items/{$this->item->id}/stock-adjustments";
         $key = (string) Str::uuid();
         $body = [
-            'expected_quantity' => '0.000',
+            'company_id' => $this->company->id, 'expected_quantity' => '0.000',
             'target_quantity' => '4.000',
             'reason' => 'Opname integrasi lintas modul',
         ];
@@ -414,7 +420,7 @@ final class BusinessLifecycleIntegrationTest extends TestCase
         $this->signIn($this->warehouse);
         $this->withHeader('Idempotency-Key', (string) Str::uuid())
             ->postJson("/api/v1/items/{$this->item->id}/stock-adjustments", [
-                'expected_quantity' => '0.000',
+                'company_id' => $this->company->id, 'expected_quantity' => '0.000',
                 'target_quantity' => '5.000',
                 'reason' => 'Stock opname untuk replay distribusi',
             ])->assertCreated();

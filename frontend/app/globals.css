@@ -1463,6 +1463,35 @@ td>small {
   min-height: 300px
 }
 
+.inventory-company-filter {
+  display: grid;
+  gap: 6px;
+  min-width: 190px;
+  font-size: 12px;
+}
+
+.inventory-company-filter select {
+  width: 100%;
+}
+
+.inventory-overview {
+  margin-bottom: 24px;
+}
+
+.inventory-overview .detail-grid {
+  padding: 0 22px 16px;
+}
+
+.inventory-overview > p,
+.inventory-overview > h3,
+.inventory-overview > .text-link {
+  margin: 12px 22px;
+}
+
+.inventory-overview > .text-link {
+  display: inline-block;
+}
+
 .table-toolbar {
   display: flex;
   gap: 14px;

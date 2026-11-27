@@ -54,6 +54,7 @@ final class UpdateGoodsReceiptRequest extends FormRequest
             'status' => ['prohibited'],
             'confirmed_by' => ['prohibited'],
             'confirmed_at' => ['prohibited'],
+            'company_id' => ['sometimes', 'required', 'integer', 'exists:companies,id,deleted_at,NULL'],
             'received_date' => ['sometimes', 'required', 'date_format:Y-m-d'],
             'notes' => ['sometimes', 'nullable', 'string', 'max:5000'],
             'items' => ['sometimes', 'required', 'array', 'min:1', 'max:100'],

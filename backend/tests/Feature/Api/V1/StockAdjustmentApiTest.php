@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Api\V1;
 
 use App\Domain\Category\Models\Category;
+use App\Domain\Company\Models\Company;
 use App\Domain\Item\Models\Item;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -20,12 +21,15 @@ final class StockAdjustmentApiTest extends TestCase
 {
     use DatabaseTransactions;
 
+    private Company $company;
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->assertSame('testing', app()->environment());
         $this->assertSame('mysql', DB::getDefaultConnection());
         $this->assertSame('purchasing_test', DB::selectOne('SELECT DATABASE() AS name')->name);
+        $this->company = Company::query()->create(['name' => 'PT Pengujian StockAdjustmentApiTest', 'address' => 'Alamat pengujian']);
 
         Permission::findOrCreate('inventory.view', 'web');
         Permission::findOrCreate('inventory.adjust', 'web');
@@ -68,6 +72,7 @@ final class StockAdjustmentApiTest extends TestCase
     private function payload(string $expected = '0.000', string $target = '8.250'): array
     {
         return [
+            'company_id' => $this->company->id,
             'expected_quantity' => $expected,
             'target_quantity' => $target,
             'reason' => 'Hasil opname fisik gudang',

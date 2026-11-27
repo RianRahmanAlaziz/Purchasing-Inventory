@@ -12,11 +12,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 final class DistributionItem extends Model
 {
-    protected $fillable = ['distribution_id', 'item_id', 'quantity', 'notes'];
+    protected $fillable = ['distribution_id', 'item_id', 'quantity', 'notes', 'asset_ids'];
 
     protected function casts(): array
     {
-        return ['quantity' => 'decimal:3'];
+        return ['quantity' => 'decimal:3', 'asset_ids' => 'array'];
     }
 
     public function distribution(): BelongsTo

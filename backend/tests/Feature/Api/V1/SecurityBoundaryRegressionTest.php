@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Api\V1;
 
 use App\Domain\Category\Models\Category;
+use App\Domain\Company\Models\Company;
 use App\Domain\Employee\Models\Department;
 use App\Domain\Employee\Models\Employee;
 use App\Domain\Item\Models\Item;
@@ -24,6 +25,8 @@ final class SecurityBoundaryRegressionTest extends TestCase
 {
     use DatabaseTransactions;
 
+    private Company $company;
+
     private Item $item;
 
     private Supplier $supplier;
@@ -42,6 +45,7 @@ final class SecurityBoundaryRegressionTest extends TestCase
         $this->assertSame('testing', app()->environment());
         $this->assertSame('mysql', DB::getDefaultConnection());
         $this->assertSame('purchasing_test', DB::selectOne('SELECT DATABASE() AS name')->name);
+        $this->company = Company::query()->create(['name' => 'PT Pengujian Stok dan Batas Akses', 'address' => 'Alamat pengujian']);
 
         foreach ([
             'items.manage', 'inventory.view', 'inventory.adjust',
@@ -166,6 +170,7 @@ final class SecurityBoundaryRegressionTest extends TestCase
     {
         $this->login($this->employeeUser, ['employee:self']);
         $distributionId = $this->postJson('/api/v1/distributions', [
+            'company_id' => $this->company->id,
             'purpose' => 'Penggunaan barang untuk pekerjaan',
             'items' => [['item_id' => $this->item->id, 'quantity' => '1.000']],
         ])->assertCreated()->json('data.id');
@@ -186,6 +191,7 @@ final class SecurityBoundaryRegressionTest extends TestCase
     {
         $this->login($this->employeeUser, ['some:other-scope']);
         $this->postJson('/api/v1/distributions', [
+            'company_id' => $this->company->id,
             'purpose' => 'Kebutuhan kerja pribadi',
             'items' => [['item_id' => $this->item->id, 'quantity' => '1.000']],
         ])->assertForbidden();

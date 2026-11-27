@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Distribution\Models;
 
+use App\Domain\Company\Models\Company;
 use App\Domain\Employee\Models\Employee;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 final class Distribution extends Model
 {
     protected $fillable = [
-        'distribution_number', 'employee_id', 'recipient_name_snapshot', 'requested_by', 'approved_by',
+        'distribution_number', 'company_id', 'employee_id', 'recipient_name_snapshot', 'requested_by', 'approved_by',
         'sent_by', 'received_by', 'status', 'purpose', 'requested_at',
         'approved_at', 'sent_at', 'received_at', 'cancelled_at', 'rejection_reason',
     ];
@@ -30,6 +31,11 @@ final class Distribution extends Model
     public function employee(): BelongsTo
     {
         return $this->belongsTo(Employee::class);
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class)->withTrashed();
     }
 
     public function requester(): BelongsTo

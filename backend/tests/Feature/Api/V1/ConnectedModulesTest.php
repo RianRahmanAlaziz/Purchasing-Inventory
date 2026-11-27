@@ -108,7 +108,7 @@ final class ConnectedModulesTest extends TestCase
         DB::table('purchase_orders')->where('id', $id)->update(['supplier_address_snapshot' => null]);
         $this->getJson("/api/v1/purchase-orders/$id")->assertOk()->assertJsonPath('data.supplier_address', 'Alamat master');
         $payload['items'][0]['unit'] = 'kg';
-        $payload['company_id'] = null;
+        $payload['company_id'] = Company::query()->create(['name' => 'PT Penerbit Aktif', 'address' => 'Alamat aktif'])->id;
         $this->postJson('/api/v1/purchase-orders', $payload)->assertUnprocessable()->assertJsonValidationErrors('items');
     }
 

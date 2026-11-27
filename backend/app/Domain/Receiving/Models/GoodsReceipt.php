@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Receiving\Models;
 
+use App\Domain\Company\Models\Company;
 use App\Domain\Purchasing\Models\PurchaseOrder;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 final class GoodsReceipt extends Model
 {
     protected $fillable = [
-        'grn_number', 'purchase_order_id', 'created_by', 'confirmed_by',
+        'grn_number', 'company_id', 'purchase_order_id', 'created_by', 'confirmed_by',
         'received_date', 'status', 'confirmed_at', 'notes',
     ];
 
@@ -28,6 +29,11 @@ final class GoodsReceipt extends Model
     public function purchaseOrder(): BelongsTo
     {
         return $this->belongsTo(PurchaseOrder::class);
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class)->withTrashed();
     }
 
     public function items(): HasMany
